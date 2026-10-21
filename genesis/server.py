@@ -17,9 +17,9 @@ from .providers import InferenceConfig
 
 
 class Simulation:
-    def __init__(self, path='data/world.sqlite', seed=42, population=10, ollama=None, inference_config=None, provider=None):
+    def __init__(self, path='data/world.sqlite', seed=42, population=10, ollama=None, inference_config=None, provider=None, width=48, height=30):
         self.path = path
-        self.world = persistence.load(path) if Path(path).exists() else World(seed, population)
+        self.world = persistence.load(path) if Path(path).exists() else World(seed, population,width,height)
         self.lock = threading.RLock()
         self.paused = self.world.climate.get('simulation_paused',False)
         self.speed = self.world.climate.get('simulation_speed',2.0)
@@ -135,7 +135,7 @@ class Simulation:
                 self.attach_world()
                 return {'ok': True, 'message': 'World loaded'}
             if action == 'new':
-                new_world = World(int(command.get('seed', 42)), int(command.get('population', 10)))
+                new_world = World(int(command.get('seed', 42)), int(command.get('population', 10)),int(command.get('width',48)),int(command.get('height',30)))
                 self.cognition.invalidate()
                 self.pending_history.clear()
                 self.world = new_world
@@ -223,6 +223,8 @@ def main():
     p.add_argument('--port', type=int, default=8765)
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--population', type=int, default=10)
+    p.add_argument('--width',type=int,default=48)
+    p.add_argument('--height',type=int,default=30)
     p.add_argument('--save', default='data/world.sqlite')
     p.add_argument('--ticks', type=int, help='Headless run, save, then exit')
     modes = p.add_mutually_exclusive_group()
@@ -237,7 +239,7 @@ def main():
     p.add_argument('--global-budget', type=int)
     p.add_argument('--model', default=os.environ.get('GENESIS_MODEL'))
     args = p.parse_args()
-    sim = Simulation(args.save, args.seed, args.population)
+    sim = Simulation(args.save, args.seed, args.population,width=args.width,height=args.height)
     overrides = {key: value for key, value in {
         'provider': args.provider, 'endpoint': args.endpoint, 'model': args.model,
         'max_concurrency': args.concurrency, 'context_limit': args.context_limit,

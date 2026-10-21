@@ -20,6 +20,8 @@ BUILDING_TYPES={
 
 
 def initialize(world,new=False):
+    if not hasattr(world,'worldgen'):world.worldgen={'mode':'legacy','chunk_size':16}
+    if not hasattr(world,'navigation'):world.navigation={'searches':0,'expanded':0,'max_expanded':0}
     for name,default in [('climate',initial()),('crops',{}),('fires',{}),('production_jobs',{}),('gates',{}),('threats',{})]:
         if not hasattr(world,name): setattr(world,name,default)
     from .threats import initialize as initialize_threats

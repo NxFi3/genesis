@@ -35,10 +35,14 @@ PASSABLE = {'plains': 1, 'farmland': 1, 'forest': .7, 'mountain': .5, 'road': 1.
 
 
 class World:
-    def __init__(self, seed=42, population=10, width=48, height=30):
+    def __init__(self, seed=42, population=10, width=48, height=30, worldgen=None):
         if not 1 <= population <= 100 or width < 32 or height < 24:
             raise ValueError('population must be 1..100; world at least 32 by 24')
         self.seed, self.width, self.height = seed, width, height
+        if width>512 or height>512: raise ValueError('Worlds above 512 tiles per side are experimental and not enabled')
+        self.worldgen={'mode':worldgen or ('coherent' if width>48 or height>30 else 'legacy'),'chunk_size':16}
+        if self.worldgen['mode'] not in ('coherent','legacy'): raise ValueError('Unknown terrain generator')
+        self.navigation={'searches':0,'expanded':0,'max_expanded':0}
         self.rng = random.Random(seed)
         self.climate = environment.initial()
         self.crops, self.fires, self.production_jobs, self.gates, self.threats = {}, {}, {}, {}, {}
@@ -77,7 +81,11 @@ class World:
 
     def _generate(self, population):
         river = self.width // 2
-        for y in range(self.height):
+        if self.worldgen['mode']=='coherent':
+            from .terrain import generate
+            self.terrain,self.elevation=generate(self.seed,self.width,self.height)
+            for x in range(self.width):self.terrain[self.height//2][x]='road'
+        for y in range(self.height) if self.worldgen['mode']=='legacy' else ():
             row = []
             for x in range(self.width):
                 if x == river and y != self.height // 2:
@@ -94,7 +102,7 @@ class World:
                     t = 'road'
                 row.append(t)
             self.terrain.append(row)
-        for sid, name, x, y in [('a', 'Willowmere', 9, 10), ('b', 'Stonehaven', self.width - 10, 18)]:
+        for sid, name, x, y in [('a', 'Willowmere', 9, 10), ('b', 'Stonehaven', self.width - 10, self.height-12 if self.worldgen['mode']=='coherent' else 18)]:
             s = Settlement(sid, name, x, y)
             self.settlements[sid] = s
             self.governance[sid] = {'leader': None, 'tax': .1, 'sharing': True, 'defense': 'peaceful', 'technology': ['gathering', 'construction'], 'last_election': 0}
@@ -132,6 +140,14 @@ class World:
             x, y = self.rng.randrange(2, self.width-2), self.rng.randrange(2, self.height-2)
             if self.passable(x, y):
                 self.wildlife[f'w{i}'] = Wildlife(f'w{i}', x, y, species='boar' if i % 3 == 0 else 'deer')
+        if self.worldgen['mode']=='coherent':
+            for cy in range((self.height+15)//16):
+                for cx in range((self.width+15)//16):
+                    x,y=min(self.width-2,cx*16+8),min(self.height-2,cy*16+8)
+                    terrain=self.terrain[y][x]
+                    kind='wood' if terrain=='forest' else 'water' if terrain in ('river','lake') else 'iron_ore' if terrain=='mountain' else 'food'
+                    rid=f'geo_{cx}_{cy}'
+                    self.resources[rid]=Resource(rid,kind,x,y,80,80,.08 if kind in ('food','wood','water') else 0,source='geographic')
         for r in self.resources.values():
             if r.kind in ('food', 'wood'):
                 self.resource_growth[r.id] = {'age': 0, 'stage': 'mature' if r.quantity > r.capacity * .5 else 'growing'}
@@ -172,6 +188,13 @@ class World:
                     return False
                 path = [goal]
             else:
+                if self.width*self.height>4096:
+                    from .navigation import route
+                    path=route(self,start,goal)
+                    if path is None:return False
+                    if abs(a.x-start[0])>.001 or abs(a.y-start[1])>.001:path.insert(0,start)
+                    self._paths[a.id]=(goal,path)
+                    return self.move(a,x,y,retreating)
                 queue, prev = deque([start]), {start: None}
                 while queue and goal not in prev:
                     p = queue.popleft()
@@ -922,6 +945,7 @@ class World:
                   'conversations': self.conversations, 'agreements': self.agreements, 'cognition_config': self.cognition_config, 'governance': self.governance, 'proposals': self.proposals, 'shipments': self.shipments, 'resource_growth': self.resource_growth, 'next_conflict': self.next_conflict, 'next_shipment': self.next_shipment, 'paths': {k: [list(v[0]), [list(p) for p in v[1]]] for k, v in self._paths.items()}}
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
+        result.update(worldgen=self.worldgen,navigation=self.navigation)
         result['events'] = self.events if full else self.events[-80:]
         if full:
             result['rng_state'] = self.rng.getstate()
@@ -947,7 +971,7 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
-        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats'):
+        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation'):
             if name in data: setattr(w,name,data[name])
         initialize(w)
         from .validation import validate_world
