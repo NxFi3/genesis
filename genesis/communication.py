@@ -15,6 +15,7 @@ def opportunities(world, agent, limit=3):
     home = world.settlements[agent.home]
     projects = [b for b in world.buildings.values() if not b.complete and distance(agent, b) <= 7]
     reports = [k for k in agent.knowledge if world.tick-k.get('tick', 0) <= 250]
+    sightings = [o for o in agent.observations.values() if o.get('kind') in ('threat', 'threat_report') and world.tick-o.get('observed_tick', -1000) <= 100]
     choices = []
     for other in world.agents.values():
         if other.id == agent.id or other.incapacitated or other.player or other.id in busy or distance(agent, other) > 3:
@@ -24,7 +25,10 @@ def opportunities(world, agent, limit=3):
         relationship = agent.relationships.get(other.id, {})
         topic, reason, score = '', '', 0
         offers = [a for a in world.agreements.values() if a['state'] == 'proposed' and {a['proposer'], a['recipient']} == {agent.id, other.id}]
-        if offers:
+        if sightings:
+            report = max(sightings, key=lambda o: o['observed_tick'])
+            topic, reason, score = 'threat warning', f'You have a sourced {report["species"]} sighting {report["id"]} from tick {report["observed_tick"]}. Discuss safety, help or defenses; preserve uncertainty and use report_threat to share the location.', 10
+        elif offers:
             topic, reason, score = 'trade offer', f'Discuss pending offer {offers[-1]["id"]}; acceptance is voluntary.', 9
         elif relationship.get('rivalry', 0) > .2:
             topic, reason, score = 'disagreement', 'You remember unresolved rivalry; consider clarification, distance or a peaceful discussion.', 7

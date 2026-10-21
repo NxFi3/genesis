@@ -44,5 +44,18 @@ func run() -> void:
         var asset := Art.human(Color.WHITE,occupation,false)
         assert(asset.has_node("LegL") and asset.has_node("ArmR"))
         asset.free()
+    state.threats={"z":{"id":"z","x":10,"y":9,"hp":35,"max_hp":35,"species":"zombie","activity":"pursue"}}
+    state.wildlife={"wolf":{"id":"wolf","x":12,"y":9,"hp":40,"species":"wolf","activity":"territorial"}}
+    state.settlements.a.threat_alert={"active":true}
+    view.accept_state(state)
+    await process_frame
+    assert(view.models.has("z") and view.models.has("wolf"),"Threats must use real state-backed models")
+    assert(view.models.z.has_node("LegL") and view.models.wolf.has_node("LegLF"),"Threat figures need animation parts")
+    view.selected="z"
+    view.focus_selected()
+    assert(view.selected_entity().species=="zombie")
+    state.threats.clear()
+    view.accept_state(state)
+    assert(not view.models.has("z"),"Disabling threats must remove their models")
     print("Isometric checks passed: orthographic scene, batched landscape, projected picking, camera, retained geometry, local climate, 21 building assets and animated role figures")
     quit(0)

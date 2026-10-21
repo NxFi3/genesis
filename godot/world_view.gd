@@ -53,13 +53,13 @@ func accept_state(value: Dictionary) -> void:
 
 func _process(delta: float) -> void:
     clock += delta
-    for category in ["agents", "wildlife"]:
+    for category in ["agents", "wildlife", "threats"]:
         for a in state.get(category, {}).values():
             var target := Vector2(a.x, a.y)
             var shown: Vector2 = smooth_positions.get(a.id, target)
             smooth_positions[a.id] = target if shown.distance_to(target) > 4 else shown.lerp(target, 1-exp(-delta*10))
     for id in smooth_positions.keys():
-        if not state.get("agents", {}).has(id) and not state.get("wildlife", {}).has(id): smooth_positions.erase(id)
+        if not state.get("agents", {}).has(id) and not state.get("wildlife", {}).has(id) and not state.get("threats",{}).has(id): smooth_positions.erase(id)
     if follow_agent:
         var target := selected_entity()
         if not target.is_empty():
@@ -71,7 +71,7 @@ func _process(delta: float) -> void:
     queue_redraw()
 
 func selected_entity() -> Dictionary:
-    for category in ["agents", "settlements", "buildings", "resources", "wildlife"]:
+    for category in ["agents", "settlements", "buildings", "resources", "wildlife", "threats"]:
         if state.get(category, {}).has(selected): return state[category][selected]
     return {}
 
@@ -123,6 +123,7 @@ func _draw() -> void:
     buildings.sort_custom(func(a,b): return a.y < b.y)
     for building in buildings: draw_building(building)
     for animal in state.wildlife.values(): draw_animal(animal)
+    for threat in state.get("threats",{}).values(): draw_zombie(threat)
     for c in state.conflicts.values():
         if c.state == "active" and state.agents.has(c.a) and state.agents.has(c.b):
             var p: Vector2 = world_point(state.agents[c.a])
@@ -136,7 +137,7 @@ func _draw() -> void:
     if labels_visible:
         for s in state.settlements.values():
             var color: Color = HOME_COLORS.get(s.id, CREAM)
-            tag(screen_point(s)+Vector2(0,-TILE*3.5*zoom), s.name, color, 14)
+            tag(screen_point(s)+Vector2(0,-TILE*3.5*zoom), s.name+(" / WATCH WARNING" if s.get("threat_alert",{}).get("active",false) else ""), color, 14)
         if zoom > 1.7:
             for b in buildings:
                 if b.id == selected: continue
@@ -297,6 +298,19 @@ func draw_animal(a: Dictionary) -> void:
     else:
         draw_colored_polygon(PackedVector2Array([p+Vector2(5,-7),p+Vector2(5,-12),p+Vector2(8,-7)]),fur)
     if a.id == selected: draw_arc(p,12,0,TAU,24,CREAM,1.5,true)
+
+func draw_zombie(a: Dictionary) -> void:
+    if a.hp<=0:return
+    var p:=world_point(a)
+    oval(p+Vector2(0,6),Vector2(8,3),Color(.1,.15,.1,.2))
+    draw_line(p+Vector2(-3,1),p+Vector2(-4,8),INK,3)
+    draw_line(p+Vector2(3,1),p+Vector2(5,8),INK,3)
+    draw_colored_polygon(PackedVector2Array([p+Vector2(-5,-6),p+Vector2(5,-6),p+Vector2(6,3),p+Vector2(-6,3)]),Color("758474"))
+    draw_circle(p+Vector2(0,-9),4,Color("acb697"))
+    draw_line(p+Vector2(-4,-5),p+Vector2(-11,-8),Color("758474"),3)
+    draw_line(p+Vector2(4,-5),p+Vector2(11,-8),Color("758474"),3)
+    draw_string(ThemeDB.fallback_font,p+Vector2(-3,-17),"z" if a.activity=="dormant" else "!",HORIZONTAL_ALIGNMENT_LEFT,-1,12,CREAM)
+    if a.id==selected:draw_arc(p,12,0,TAU,24,CREAM,1.5,true)
 
 func pan(pixels: Vector2) -> void:
     follow_agent = false

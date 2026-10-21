@@ -297,7 +297,9 @@ class World:
                 return False
         elif not self.passable(x, y):
             return False
-        if kind in ('wall','gate') and any(hypot(a.x-x,a.y-y)<.75 for a in self.agents.values()): return False
+        if kind in ('wall','gate'):
+            from .predators import occupied
+            if occupied(self,x,y): return False
         if any(b.x == x and b.y == y for b in self.buildings.values()):
             return False
         recipe = BUILDINGS[kind]
@@ -456,6 +458,7 @@ class World:
         from .social import work_commitments
         if work_commitments(self, a):
             return
+        if threats.maintain(self, a): return
         if production.autonomous(self,a): return
         if survival.autonomous(self,a): return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
@@ -635,6 +638,10 @@ class World:
             if animal.hp <= 0:
                 animal.activity = 'incapacitated'
                 continue
+            if animal.species == 'wolf':
+                from .predators import wolf
+                wolf(self, animal)
+                continue
             threat = self.agents.get(animal.threat)
             if threat is None:
                 # Wildlife interprets close crowding as a threat, never seeks fights.
@@ -744,7 +751,7 @@ class World:
         if self.tick % 100 == 0:
             for b in self.buildings.values():
                 if b.complete:
-                    b.condition = max(10, b.condition-.5)
+                    b.condition = max(0, b.condition-.5)
             for c_id, c in list(self.conflicts.items()):
                 if c.state != 'active' and c.ended is not None and self.tick-c.ended > 500:
                     del self.conflicts[c_id]
@@ -756,6 +763,9 @@ class World:
             if len(healthy) >= 2 and len(self.wildlife) < 16 and sum(r.quantity for r in self.resources.values() if r.kind == 'food') > 30:
                 parent = self.rng.choice(healthy)
                 options = self.neighbors(parent.x, parent.y)
+                if parent.species == 'wolf':
+                    from .predators import safe_habitat
+                    options = [p for p in options if safe_habitat(self,*p)]
                 if options:
                     x, y = self.rng.choice(options)
                     wid = f'wild_{self.tick}'
@@ -859,6 +869,7 @@ class World:
             survival.update(self)
             combat.update(self)
             self._institutions()
+            threats.update(self)
             for a in self.agents.values():
                 a.hunger = min(100, a.hunger + .22)
                 a.thirst = min(100, a.thirst + .3)
@@ -878,6 +889,10 @@ class World:
                             if not outcome['ok'] or not outcome.get('pending'): a.extraction['auto']=False
                         combat.recover(a, a.activity in ('rest', 'sleep') or a.incapacitated)
                     else:
+                        a.defending = False
+                        if threats.respond(self, a):
+                            combat.recover(a, False)
+                            continue
                         shipment = next((s for s in self.shipments.values() if s['courier'] == a.id and s['state'] in ('in_transit', 'returning')), None)
                         talking = any(c['state'] == 'active' and a.id in c['participants'] for c in self.conversations.values())
                         if shipment and not talking and a.hunger < 45 and a.thirst < 45 and a.stamina >= 25 and a.fatigue < 75:
@@ -897,7 +912,6 @@ class World:
                             self.start_conflict(a.id, b.id, 'scarcity and unresolved rivalry')
                             break
             production.update(self)
-            threats.update(self)
             if self.tick % 50 == 0:
                 for s in self.settlements.values():
                     s.stability = min(100, s.stability + .5) if s.conflict == 'peace' else max(0, s.stability-.2)

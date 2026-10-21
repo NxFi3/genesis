@@ -90,8 +90,16 @@ def intervene(world, command):
         candidate['clock_offset'] = hour-world.tick%240/10
     elif operation == 'difficulty': candidate['difficulty']=number(command.get('value',1),.25,2,'difficulty')
     elif operation == 'threats':
-        if type(command.get('enabled')) is not bool: raise ValueError('Threat enable must be boolean')
-        candidate['threats_enabled']=command['enabled']
+        from .threats import DEFAULTS, validate_settings
+        if 'enabled' in command:
+            if type(command['enabled']) is not bool: raise ValueError('Threat enable must be boolean')
+            candidate['threats_enabled']=command['enabled']
+        settings = candidate.setdefault('threat_settings', copy.deepcopy(DEFAULTS))
+        supplied = command.get('settings', {})
+        if not isinstance(supplied, dict) or set(supplied)-set(DEFAULTS): raise ValueError('Unknown threat settings')
+        settings.update(supplied)
+        validate_settings(settings, world.width, world.height)
+        if not supplied and 'enabled' not in command: raise ValueError('Supply threat enable or settings')
     elif operation == 'replenish':
         fraction=number(command.get('fraction',.25),0,1,'fraction')
         selected=[r for r in world.resources.values() if region=='world' or region_at(world,r.x,r.y)==region or region=='region' and bounds[0]<=r.x<=bounds[2] and bounds[1]<=r.y<=bounds[3]]
@@ -102,11 +110,17 @@ def intervene(world, command):
         if len(world.wildlife)>=24: raise ValueError('Wildlife population cap reached')
         x=number(command.get('x'),0,world.width-1,'x'); y=number(command.get('y'),0,world.height-1,'y')
         if not world.passable(x,y): raise ValueError('Wildlife needs passable land')
+        if species == 'wolf':
+            from .predators import safe_habitat
+            if not safe_habitat(world,x,y): raise ValueError('Predators must spawn away from inhabited settlements, people and occupied tiles')
         from .models import Wildlife
         wid=f'w_god_{world.next_event}'
         world.wildlife[wid]=Wildlife(wid,x,y,species=species)
     else: raise ValueError('Unknown God Mode operation')
     world.climate=candidate
+    if operation == 'threats':
+        from .threats import reconcile
+        reconcile(world)
     world.event('god_intervention',f'God Mode: {operation} in {region}.',[],intervention={k:v for k,v in command.items() if k!='action'})
     # Humans learn changes only through subsequent local perception.
     return {'ok':True,'message':f'{operation.capitalize()} intervention applied and recorded'}
@@ -124,7 +138,7 @@ def update(world):
         soil['flood']=max(0,min(1,soil['flood']+(rain-.7)*.02))
         if world.tick%30==0 and env['weather']=='thunderstorm':
             for b in world.buildings.values():
-                if b.home==sid and b.complete: b.condition=max(10,b.condition-.5)
+                if b.home==sid and b.complete: b.condition=max(0,b.condition-.5)
     if world.tick%20==0:
         for a in world.agents.values():
             env=conditions(world,a.x,a.y)

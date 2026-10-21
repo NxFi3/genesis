@@ -178,17 +178,35 @@ static func human(faction: Color, occupation: String, player: bool) -> Node3D:
     cargo.visible=false
     return root
 
+static func zombie() -> Node3D:
+    # Original low-poly fantasy wanderer: no wounds or graphic imagery.
+    var root := human(Color("596a63"),"",false)
+    part(root,"box",Vector3(.13,.57,-.15),Vector3(.14,.20,.025),Color("a19876"))
+    part(root,"box",Vector3(-.12,.36,-.16),Vector3(.12,.11,.025),Color("788775"))
+    part(root,"box",Vector3(0,.96,-.16),Vector3(.30,.08,.06),Color("798d7b"))
+    for x in [-.065,.065]:
+        part(root,"sphere",Vector3(x,.96,-.20),Vector3(.035,.035,.025),Color("d6e5ba"))
+    root.get_node("ArmL").rotation.x=-1.1
+    root.get_node("ArmR").rotation.x=-1.3
+    return root
+
 static func animal(species: String) -> Node3D:
     var root := Node3D.new()
     var fur := Color("b69772") if species == "deer" else Color("858b81") if species == "wolf" else Color("836e57")
     part(root,"sphere",Vector3(0,.4,0),Vector3(.4,.4,.8),fur)
     part(root,"sphere",Vector3(0,.57,-.38),Vector3(.24,.28,.3),fur.lightened(.1))
     for x in [-.13,.13]:
-        for z in [-.23,.23]: part(root,"box",Vector3(x,.17,z),Vector3(.06,.34,.08),Color("615444"))
+        for z in [-.23,.23]:
+            var leg := part(root,"box",Vector3(x,.17,z),Vector3(.06,.34,.08),Color("615444"))
+            leg.name="Leg%s%s" % ["L" if x<0 else "R","F" if z<0 else "B"]
     if species == "deer":
         for x in [-.09,.09]:
             var antler := part(root,"box",Vector3(x,.85,-.4),Vector3(.03,.4,.03),Color("d1c19e"))
             antler.rotation.z = x*3
     if species == "wolf":
         for x in [-.09,.09]: part(root,"cone",Vector3(x,.77,-.35),Vector3(.1,.2,.1),fur)
+        part(root,"box",Vector3(0,.54,-.59),Vector3(.17,.13,.22),fur.lightened(.2))
+        part(root,"sphere",Vector3(0,.55,-.72),Vector3(.08,.08,.06),Color("36413b"))
+        part(root,"sphere",Vector3(0,.48,.4),Vector3(.14,.15,.5),fur.darkened(.2))
+        part(root,"sphere",Vector3(0,.55,-.15),Vector3(.48,.46,.35),fur.darkened(.14))
     return root

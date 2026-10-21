@@ -29,6 +29,9 @@ SCHEMAS = {
     'conflict_response': {'target': 'opponent id', 'choice': 'negotiate/avoid/retreat/defend/fight'},
 }
 SCHEMAS.update({
+    'threat_response': {'target': 'recent observed/reported threat id', 'choice': 'flee/shelter/request_help/defend/cooperate'},
+    'warn': {'target': 'recent observed/reported threat id; local alarm, not dialogue'},
+    'report_threat': {'target': 'nearby conversation partner id', 'threat': 'threat id in your recent private observations'},
     'repel': {'target':'nearby observed optional fantasy threat id'},
     'mine': {'resource':'visible finite mineral deposit id'},
     'fish': {'resource':'nearby fish habitat stock id'},
@@ -90,7 +93,7 @@ def validate_plan(data):
     if not isinstance(dialogue_actions, list) or len(dialogue_actions) > 2:
         raise ValueError('At most two dialogue actions may be proposed per turn')
     for action in dialogue_actions:
-        if not isinstance(action, dict) or action.get('action') not in ('offer', 'accept', 'reject', 'help', 'teach', 'share', 'commit_work', 'conflict_response'):
+        if not isinstance(action, dict) or action.get('action') not in ('offer', 'accept', 'reject', 'help', 'teach', 'share', 'commit_work', 'conflict_response', 'report_threat'):
             raise ValueError('Unsupported dialogue action')
     if dialogue_actions:
         # Reuse exactly the same flat argument validation as ordinary plans.

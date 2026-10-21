@@ -30,10 +30,24 @@ def validate_world(world):
         inventory(agent.inventory)
         require(finite(agent.carry_capacity,1,10000),'invalid carrying capacity')
         require(all(k in agent.equipment and finite(v,0,100) for k,v in agent.equipment_condition.items()),'invalid equipment condition')
+        from .threats import CHOICES
+        require(isinstance(agent.threat_state,dict) and isinstance(agent.threat_intent,dict),'invalid threat response state')
+        for key in ('last_attack','last_warning','response_tick'):
+            if key in agent.threat_state: require(finite(agent.threat_state[key],-100),'invalid threat response time')
+        for observation in agent.observations.values():
+            if observation.get('kind') in ('threat','threat_report'):
+                require(isinstance(observation.get('id'),str) and observation.get('species') in ('wolf','zombie') and finite(observation.get('observed_tick')) and finite(observation.get('x'),0,world.width-1) and finite(observation.get('y'),0,world.height-1),'invalid private threat sighting')
+        if agent.threat_intent:
+            require(agent.threat_intent.get('choice') in CHOICES and isinstance(agent.threat_intent.get('target'),str) and finite(agent.threat_intent.get('expires')),'invalid threat intention')
     for sid, settlement in world.settlements.items():
         require(sid == settlement.id, 'invalid settlement identity')
         position(settlement)
         inventory(settlement.inventory)
+        alert=settlement.threat_alert
+        require(isinstance(alert,dict) and isinstance(alert.get('reports',{}),dict) and len(alert.get('reports',{}))<=32,'invalid settlement warning')
+        for report in alert.get('reports',{}).values():
+            require(isinstance(report,dict) and finite(report.get('x'),0,world.width-1) and finite(report.get('y'),0,world.height-1) and finite(report.get('observed_tick')) and report.get('species') in ('wolf','zombie'),'invalid settlement sighting')
+        if 'until' in alert: require(finite(alert['until']),'invalid settlement warning expiry')
     for resource in world.resources.values():
         position(resource)
         require(resource.kind in RESOURCES,'unknown deposit resource')
@@ -46,6 +60,8 @@ def validate_world(world):
     require(len(world.elevation)==world.height and all(len(row)==world.width and all(finite(v,-2,20) for v in row) for row in world.elevation),'invalid elevation')
     require(world.climate.get('season_override') in (None,*SEASONS),'invalid season override')
     require(finite(world.climate.get('difficulty'),.25,2) and type(world.climate.get('threats_enabled')) is bool,'invalid world controls')
+    from .threats import validate_settings
+    validate_settings(world.climate.get('threat_settings'),world.width,world.height)
     require(finite(world.climate.get('clock_offset'),-24,24),'invalid clock offset')
     for scope,env in world.climate['overrides'].items():
         require(scope in ('world','a','b','region') and env.get('weather') in WEATHER and finite(env.get('expires')),'invalid weather override')
@@ -69,7 +85,20 @@ def validate_world(world):
     for animal in world.wildlife.values():
         position(animal)
         require(finite(animal.hp,0,100) and finite(animal.hunger,0,100) and animal.species in ('deer','boar','wolf','sheep') and type(animal.harvested) is bool,'invalid wildlife')
-    require(len(world.threats)<=3,'threat population exceeds cap')
-    for threat in world.threats.values():
+        require(finite(animal.stamina,0,100) and isinstance(animal.behavior,dict),'invalid wildlife behavior')
+        if 'territory' in animal.behavior:
+            bounds=animal.behavior['territory']
+            require(isinstance(bounds,list) and len(bounds)==2 and finite(bounds[0],0,world.width-1) and finite(bounds[1],0,world.height-1),'invalid wolf territory')
+        if 'last_attack' in animal.behavior: require(finite(animal.behavior['last_attack'],-100),'invalid wolf attack time')
+    require(len(world.threats)<=8,'threat population exceeds cap')
+    for tid,threat in world.threats.items():
         require(finite(threat.get('x'),0,world.width-1) and finite(threat.get('y'),0,world.height-1) and finite(threat.get('hp'),0,100) and finite(threat.get('stamina'),0,100),'invalid fantasy threat')
+        require(threat.get('id')==tid and threat.get('species')=='zombie' and finite(threat.get('max_hp'),1,100) and threat['hp']<=threat['max_hp'] and finite(threat.get('created')),'invalid threat identity or health')
+        require(threat['hp']<=0 or world.passable(threat['x'],threat['y']),'living threat on impassable terrain')
+        for key in ('last_attack','last_seen','last_move'):
+            require(finite(threat.get(key),-100),'invalid threat time')
+        require(threat.get('target') is None or threat.get('target') in world.agents,'invalid pursuit target')
+        if 'last_location' in threat:
+            point=threat['last_location']
+            require(isinstance(point,list) and len(point)==2 and finite(point[0],0,world.width-1) and finite(point[1],0,world.height-1),'invalid last threat sighting')
     return world

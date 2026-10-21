@@ -101,7 +101,8 @@ def action(world,actor,command):
         b=world.buildings.get(command.get('building'))
         opened=command.get('open')
         if not b or b.kind!='gate' or b.home!=actor.home or not b.complete or distance(actor,b)>2 or type(opened) is not bool: return fail('Operate a nearby completed home gate using a boolean open state')
-        if not opened and any(distance(a,b)<.75 for a in world.agents.values()): return fail('Cannot close a gate on an occupant')
+        from .predators import occupied
+        if not opened and occupied(world,b.x,b.y): return fail('Cannot close a gate on an occupant')
         world.gates[b.id]=opened; world._paths.clear(); world._blocked_tick=-1
         world.event('gate_changed',f'{actor.name} {"opened" if opened else "closed"} a gate.',[actor.id])
         return done('Gate pathfinding state changed')

@@ -50,7 +50,7 @@ def update(world):
         if actor is None or b is None: continue
         recipe=PRODUCTION[job['recipe']]
         talking=any(c['state']=='active' and actor.id in c['participants'] for c in world.conversations.values())
-        if actor.incapacitated or world.active(actor.id) or talking or actor.hunger>75 or actor.thirst>75 or actor.stamina<5 or actor.fatigue>80 or distance(actor,b)>2: continue
+        if actor.incapacitated or world.active(actor.id) or actor.threat_state.get('response_tick')==world.tick or talking or actor.hunger>75 or actor.thirst>75 or actor.stamina<5 or actor.fatigue>80 or distance(actor,b)>2: continue
         if b.kind in ('campfire','hearth') and world.fires.get(b.id,{}).get('fuel_ticks',0)<=0: continue
         actor.activity='produce'; actor.reason='Working on '+job['recipe']
         actor.stamina=max(0,actor.stamina-1)

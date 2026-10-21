@@ -45,6 +45,7 @@ def perceive(world, agent):
             'climate': conditions(world,agent.x,agent.y), 'season': world.season, 'day_phase': 'day' if world.daylight else 'night', 'weather': world.weather,
             'nearby_agents': [{'id': a.id, 'name': a.name, 'home': a.home, 'activity': a.activity,
                                'x': round(a.x, 2), 'y': round(a.y, 2)} for a in nearby],
+            'threat_reports': [dict(o) for o in agent.observations.values() if o.get('kind') in ('threat', 'threat_report') and world.tick-o.get('observed_tick', -1000) <= 100][-6:],
             'resources': [x for key, x in agent.observations.items() if key in world.resources],
             'known_places': [x for key, x in agent.observations.items() if key in world.settlements],
             'buildings': [{'id': b.id, 'kind': b.kind, 'complete': b.complete, 'progress': b.progress, 'home': b.home, 'x': b.x, 'y': b.y} for b in buildings]}
@@ -70,6 +71,7 @@ def context(world, agent, query='', limit=12000, partner_id=None):
              'goals': agent.goals[-5:], 'long_term_goals': agent.long_term_goals[-4:],
              'commitments': agent.commitments[-8:], 'plan': [{k: v for k, v in step.items() if not k.startswith('_')} for step in agent.plan[agent.plan_index:agent.plan_index+8]],
              'plan_status': agent.plan_status, 'plan_goal': agent.plan_goal, 'plan_feedback': agent.plan_feedback,
+             'threat_intent': agent.threat_intent,
              'conflicts': [{'opponent': c.b if c.a == agent.id else c.a, 'cause': c.cause} for c in world.conflicts.values() if c.state == 'active' and agent.id in (c.a, c.b)], 'failure': agent.plan_error, 'reflection': agent.reflection[-1200:],
              'memories': world.memories_for(agent.id, query, 8),
              'settlement': {'id': home.id, 'name': home.name, 'policy': home.policy}}

@@ -272,10 +272,7 @@ func _entities() -> void:
                 models.erase(a.id)
             if not models.has(a.id):
                 var color := Color("7ec4a2") if a.get("home","") == "a" else Color("91b9d6")
-                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false)) if category == "agents" else Art.human(Color("70836a"),"",false) if category=="threats" else Art.animal(a.get("species","wolf"))
-                if category=="threats":
-                    model.get_node("ArmL").rotation.x=-1.2
-                    model.get_node("ArmR").rotation.x=-1.2
+                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false)) if category == "agents" else Art.zombie() if category=="threats" else Art.animal(a.get("species","wolf"))
                 model.name = a.id
                 people.add_child(model)
                 models[a.id] = model
@@ -308,7 +305,7 @@ func _process(delta: float) -> void:
             var model: Node3D = models[a.id]
             model.position = shown
             if Vector2(motion.x,motion.z).length() > .02: model.rotation.y = atan2(motion.x,motion.z)+PI
-            var down: bool = a.get("incapacitated",false) or a.get("activity","") in ["sleep","rest","incapacitated"]
+            var down: bool = a.get("incapacitated",false) or float(a.get("hp",1))<=0 or a.get("activity","") in ["sleep","rest","incapacitated"]
             model.rotation.z = PI*.48 if down else 0.0
             if category == "agents":
                 var working: bool = a.get("activity","") in ["build","work","gather","mine","craft","hunt","defend","fight","produce","fish","harvest"]
@@ -317,6 +314,18 @@ func _process(delta: float) -> void:
                     var sign_value := 1 if side == "L" else -1
                     model.get_node("Leg"+side).rotation.x = sin(clock*10)*.55*sign_value if walking and not down else 0.0
                     model.get_node("Arm"+side).rotation.x = sin(clock*8)*.75 if working else sin(clock*10)*.4*-sign_value if walking and not down else 0.0
+            elif category=="threats":
+                var walking := Vector2(motion.x,motion.z).length()>.02
+                for side in ["L","R"]:
+                    var phase := 1 if side=="L" else -1
+                    model.get_node("Leg"+side).rotation.x=sin(clock*5)*.3*phase if walking and not down else 0.0
+                    model.get_node("Arm"+side).rotation.x=-1.1+sin(clock*3+phase)*.12
+                model.rotation.x=.12 if a.get("activity","")=="dormant" else 0.0
+            elif category=="wildlife":
+                var walking := Vector2(motion.x,motion.z).length()>.02
+                for index in range(4):
+                    var leg := model.get_node_or_null(["LegLF","LegRB","LegRF","LegLB"][index])
+                    if leg: leg.rotation.x=sin(clock*11+(PI if index>1 else 0))*0.5 if walking and not down else 0.0
     if follow_agent:
         var entity := selected_entity()
         if not entity.is_empty(): center = center.lerp(Vector3(entity.x,height_at(entity.x,entity.y),entity.y),1-exp(-delta*5))
@@ -389,7 +398,9 @@ func _draw() -> void:
     if viewport_3d == null or state.is_empty(): return
     draw_texture_rect(viewport_3d.get_texture(),Rect2(Vector2.ZERO,view_size),false)
     if labels_visible:
-        for s in state.settlements.values(): tag(screen_point(s)+Vector2(0,-50*zoom),s.name,Color("d7e2c0"),14)
+        for s in state.settlements.values():
+            var alert: bool=s.get("threat_alert",{}).get("active",false)
+            tag(screen_point(s)+Vector2(0,-50*zoom),s.name+("  /  WATCH WARNING" if alert else ""),Color("e9b678") if alert else Color("d7e2c0"),14)
     var entity := selected_entity()
     if not entity.is_empty():
         var p := screen_point(entity)
@@ -403,6 +414,18 @@ func _draw() -> void:
                 draw_rect(Rect2(p+Vector2(-8,-14),Vector2(16,3)),Color("3c4941"))
                 draw_rect(Rect2(p+Vector2(-8,-14),Vector2(16*float(a.hp)/a.max_hp,3)),Color("d5b873"))
             if cargo_agents.has(a.id): tag(p+Vector2(12,0),"▣",Color("dab788"),12)
+            if a.get("threat_state",{}).get("response_tick",-1)==state.tick:
+                var activity: String=a.get("activity","").replace("_"," ")
+                tag(p+Vector2(0,-30),activity.to_upper(),Color("efc28b"),10)
+        for threat in state.get("threats",{}).values():
+            if threat.hp<=0:continue
+            var p:=screen_point(threat)
+            tag(p+Vector2(0,-22),"Z · RESTING" if threat.activity=="dormant" else "! ZOMBIE",Color("c8d4ac") if threat.activity=="dormant" else Color("efbe83"),11)
+            if threat.hp<threat.get("max_hp",35):
+                draw_rect(Rect2(p+Vector2(-8,-15),Vector2(16*float(threat.hp)/threat.get("max_hp",35),3)),Color("d5b873"))
+        for animal in state.wildlife.values():
+            if animal.get("species","")=="wolf" and animal.get("activity","") in ["territorial","hunt","warning"]:
+                tag(screen_point(animal)+Vector2(0,-20),"WOLF · "+str(animal.activity).to_upper(),Color("d8bd98"),10)
         for b in state.buildings.values():
             if not b.complete and zoom > 1.1: tag(screen_point(b)+Vector2(0,-14),"Building · %.0f" % b.progress,Color("e6c384"),11)
     for i in range(54):

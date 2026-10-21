@@ -27,6 +27,7 @@ func run() -> void:
         state.agents[id] = {"id":id,"name":id,"home":"a" if id != "b0" else "b","x":3+state.agents.size()*4,"y":10,"hp":20 if id == "injured" else 100,"max_hp":100,"player":id=="player","incapacitated":id=="injured","occupation":"guard" if id=="a0" else "builder","activity":"build","inventory":{"wood":6}}
     for species in ["deer","boar"]:
         state.wildlife[species] = {"id":species,"x":8+state.wildlife.size()*4,"y":13,"species":species}
+    state.threats={"z":{"id":"z","x":11,"y":15,"hp":35,"species":"zombie","activity":"pursue"}}
     state.conversations.d1 = {"id":"d1","participants":["a0","b0"],"state":"active"}
     state.shipments.s1 = {"id":"s1","state":"in_transit","courier":"player"}
     view.accept_state(state)
@@ -35,6 +36,8 @@ func run() -> void:
     assert(view.terrain_layer.redraw_count > 0)
     assert(view.conversation_agents.size() == 2)
     assert(view.cargo_agents.has("player"))
+    view.selected="z"
+    assert(view.selected_entity().species=="zombie","Flat fallback must render and select threats")
     var draws: int = view.terrain_layer.redraw_count
     view.accept_state(state)
     await process_frame

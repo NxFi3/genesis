@@ -2,7 +2,9 @@
 
 An evolving 2.5D medieval sandbox with independent human agents, a Python simulation, a Godot 4 client, and SQLite persistence. The simulation engine remains authoritative. Shared asynchronous local inference can generate each inhabitant's own goals, executable plans, and conversations; survival and combat continue without a model.
 
-**Integration branch:** `feature/genesis-3-world`, preserving `813447d` and the v2 baseline. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Current validation](docs/validation-v3.md) · [Genesis 3 systems and remaining limits](docs/genesis3.md) · [Development log](docs/development-v2.md).
+**Integration branch:** `feature/genesis-3-world`, preserving `813447d` and the v2 baseline. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Current validation](docs/validation-v3.md) · [Genesis 3 systems and remaining limits](docs/genesis3.md) · [Development log](docs/development-v3.md).
+
+**Dynamic threats milestone:** `feature/genesis-dynamic-threats`, based on the validated Genesis 3 build `6c97f9c`. Adds optional nocturnal zombies, territorial wolves, local warnings, individual defensive choices, guarded settlements and original animated threat figures. Zombies remain **off by default**. Use **God Mode → Threats & wildlife** to enable them, adjust balance/spawn areas, or remove them immediately. [Feature guide](docs/dynamic-threats.md) · [Milestone validation](docs/validation-threats.md).
 
 The latest version adds an orthographic 3D world, original low-poly assets, timed mining/production, crops/cooking/heat, regional weather and a persistent God Mode panel. [Genesis 3 guide and screenshots](docs/genesis3.md) · [Preserved conversation behavior](docs/communication-update.md).
 

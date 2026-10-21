@@ -6,6 +6,7 @@ var fields: Dictionary = {}
 var readings: RichTextLabel
 var state: Dictionary = {}
 var region_ids := ["world","a","b","region"]
+var threat_revision := ""
 
 func _ready() -> void:
     size = Vector2i(760,730)
@@ -67,12 +68,36 @@ func _ready() -> void:
         fields[key]=field
         spawn.add_child(field)
     action(world,"Spawn wildlife at this tile",func(): emit_command("spawn",false,{"species":option("species"),"x":fields.spawn_x.value,"y":fields.spawn_y.value}))
+    action(world,"Return all climate and clock controls to nature",func(): command_requested.emit({"action":"god","operation":"natural","region":"world"}))
+    var danger := column(tabs,"Threats & wildlife")
+    note(danger,"Zombies are optional. Spawns respect settlement, building and inhabitant exclusion zones. Lower intensity leaves more time for peaceful development. Wolves use lightweight territorial behavior.")
     var threats := CheckBox.new()
-    threats.text="Enable bounded optional fantasy threats"
+    threats.text="Enable zombies (off removes existing zombies)"
     threats.toggled.connect(func(value): emit_command("threats",false,{"enabled":value}))
     fields.threats=threats
-    world.add_child(threats)
-    action(world,"Return all climate and clock controls to nature",func(): command_requested.emit({"action":"god","operation":"natural","region":"world"}))
+    danger.add_child(threats)
+    amount(danger,"Zombie intensity (0 = off)","threat_intensity",0,2,1,.25)
+    amount(danger,"Maximum zombies","threat_cap",0,8,3,1)
+    amount(danger,"Base spawn interval (ticks)","threat_interval",60,5000,180,30)
+    amount(danger,"New-world grace (ticks)","threat_grace",0,10000,360,60)
+    amount(danger,"Wolf territorial aggression","wolf_aggression",0,1,.35,.05)
+    var night := CheckBox.new()
+    night.text="Nocturnal zombies: spawn and move at night; dormant in daylight"
+    night.button_pressed=true
+    fields.threat_night=night
+    danger.add_child(night)
+    options(danger,"Spawn areas","threat_region",["Automatic wilderness borders","Custom rectangle below"])
+    var area := HBoxContainer.new()
+    danger.add_child(area)
+    for key in ["threat_x0","threat_y0","threat_x1","threat_y1"]:
+        var field := SpinBox.new()
+        field.prefix=key.trim_prefix("threat_")+" "
+        field.min_value=0;field.max_value=200;field.step=1;field.value=12 if key.ends_with("1") else 1
+        field.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+        fields[key]=field
+        area.add_child(field)
+    action(danger,"Apply threat balance and spawn area",apply_threats)
+    note(danger,"Warnings are local reports, not omniscient knowledge. Guards follow sightings; civilians may flee, seek shelter, call for help or defend. Defensive construction and maintenance consume real supplies.")
     readings = RichTextLabel.new()
     readings.name="Observations"
     readings.bbcode_enabled=true
@@ -143,6 +168,12 @@ func apply_weather() -> void:
         for key in ["temperature","precipitation","wind","snow","drought"]:values[key]=fields[key].value
     emit_command("weather",true,values)
 
+func apply_threats() -> void:
+    var regions: Array=[]
+    if fields.threat_region.selected==1:
+        regions.append([int(fields.threat_x0.value),int(fields.threat_y0.value),int(fields.threat_x1.value),int(fields.threat_y1.value)])
+    emit_command("threats",false,{"settings":{"intensity":fields.threat_intensity.value,"max_zombies":int(fields.threat_cap.value),"spawn_interval":int(fields.threat_interval.value),"grace_ticks":int(fields.threat_grace.value),"night_only":fields.threat_night.button_pressed,"wolf_aggression":fields.wolf_aggression.value,"spawn_regions":regions}})
+
 func update_world(value: Dictionary) -> void:
     state=value
     var text := Style.heading("REGIONAL ENVIRONMENT")
@@ -158,7 +189,25 @@ func update_world(value: Dictionary) -> void:
     for job in state.get("production_jobs",{}).values():
         if job.state=="working":text+="%s · %s · %.0f / %.0f work\n" % [job.actor,job.recipe,job.progress,job.duration]
     for crop in state.get("crops",{}).values():text+="%s · %s · %s · %.0f growth\n" % [crop.building,crop.kind,crop.stage,crop.growth]
+    text+="\n"+Style.heading("THREATS & LOCAL WARNINGS")
+    text+="Zombies: %s · %d present\n" % ["enabled" if state.get("climate",{}).get("threats_enabled",false) else "disabled",state.get("threats",{}).size()]
+    for town in state.get("settlements",{}).values():
+        var alert: Dictionary=town.get("threat_alert",{})
+        text+="%s: %s\n" % [town.name,"local watch warning" if alert.get("active",false) else "no active warning"]
     readings.text=text
     for pair in [["x0",state.get("width",48)-1],["x1",state.get("width",48)-1],["y0",state.get("height",30)-1],["y1",state.get("height",30)-1],["spawn_x",state.get("width",48)-1],["spawn_y",state.get("height",30)-1]]:
         fields[pair[0]].max_value=pair[1]
     fields.threats.set_pressed_no_signal(state.get("climate",{}).get("threats_enabled",false))
+    for pair in [["threat_x0",state.get("width",48)-1],["threat_x1",state.get("width",48)-1],["threat_y0",state.get("height",30)-1],["threat_y1",state.get("height",30)-1]]:
+        fields[pair[0]].max_value=pair[1]
+    var settings: Dictionary=state.get("climate",{}).get("threat_settings",{})
+    var revision:=JSON.stringify(settings)
+    if revision!=threat_revision:
+        threat_revision=revision
+        for pair in [["threat_intensity","intensity",1],["threat_cap","max_zombies",3],["threat_interval","spawn_interval",180],["threat_grace","grace_ticks",360],["wolf_aggression","wolf_aggression",.35]]:
+            fields[pair[0]].value=settings.get(pair[1],pair[2])
+        fields.threat_night.set_pressed_no_signal(settings.get("night_only",true))
+        var regions: Array=settings.get("spawn_regions",[])
+        fields.threat_region.select(0 if regions.is_empty() else 1)
+        if not regions.is_empty():
+            for i in range(4): fields[["threat_x0","threat_y0","threat_x1","threat_y1"][i]].value=regions[0][i]

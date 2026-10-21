@@ -22,6 +22,8 @@ BUILDING_TYPES={
 def initialize(world,new=False):
     for name,default in [('climate',initial()),('crops',{}),('fires',{}),('production_jobs',{}),('gates',{}),('threats',{})]:
         if not hasattr(world,name): setattr(world,name,default)
+    from .threats import initialize as initialize_threats
+    initialize_threats(world)
     for a in world.agents.values(): a.inventory=expand(a.inventory)
     for s in world.settlements.values(): s.inventory=expand(s.inventory)
     for shipment in world.shipments.values(): shipment['cargo']=expand(shipment['cargo'])

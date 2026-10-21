@@ -34,6 +34,8 @@ class Agent:
     player: bool = False
     combat_choice: str = 'avoid'
     combat_intent: dict = field(default_factory=dict)
+    threat_intent: dict = field(default_factory=dict)
+    threat_state: dict = field(default_factory=dict)
     patrol_index: int = 0
     shelter: float = 0
     safety: float = 0
@@ -75,6 +77,7 @@ class Settlement:
     diplomacy: dict = field(default_factory=dict)
     council: list = field(default_factory=list)
     policy: str = 'share_surplus'
+    threat_alert: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -114,6 +117,7 @@ class Wildlife:
     harvested: bool = False
     age: int = 0
     hunger: float = 0
+    behavior: dict = field(default_factory=dict)
 
 
 @dataclass

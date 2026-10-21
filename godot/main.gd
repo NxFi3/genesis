@@ -447,6 +447,8 @@ func _inspect() -> void:
         text += UIStyle.heading("WELLBEING")
         text += "Health  %.0f / %.0f     Stamina  %.0f\nHunger  %.0f    Thirst  %.0f    Fatigue  %.0f\nSafety need  %.0f    Company need  %.0f\n\n" % [a.hp,a.max_hp,a.stamina,a.hunger,a.thirst,a.fatigue,a.get("safety",0),a.get("social",0)]
         text += UIStyle.heading(str(a.activity).capitalize()) + UIStyle.safe(a.reason) + "\n\n"
+        var intention: Dictionary=a.get("threat_intent",{})
+        if not intention.is_empty(): text+="Safety intention: %s · %s\n\n" % [UIStyle.safe(intention.get("choice","")),UIStyle.safe(intention.get("target",""))]
         text += "Warmth need %.0f · Carrying %.0f / %.0f units\n\n" % [a.get("warmth",0),_inventory_mass(a.inventory),a.get("carry_capacity",120)]
         var job: Dictionary=state.get("production_jobs",{}).get(a.get("production_job",""),{})
         if not job.is_empty() and job.get("state","")=="working": text+="Producing %s · %.0f / %.0f work\n\n" % [job.recipe,job.progress,job.duration]
@@ -475,6 +477,10 @@ func _inspect() -> void:
             mind += "%s %d. %s %s\n" % ["✓" if index < a.get("plan_index",0) else "→",index+1,UIStyle.safe(str(step.action).capitalize()),UIStyle.safe(", ".join(pieces))]
         if not str(a.get("plan_error","")).is_empty(): mind += "[color=#e6ae74]"+UIStyle.safe(a.plan_error)+"[/color]\n"
         mind += "\n"+UIStyle.safe(a.get("plan_feedback",""))+"\n"
+        mind += "\n"+UIStyle.heading("SAFETY REPORTS")
+        for report in a.get("observations",{}).values():
+            if report.get("kind","") in ["threat","threat_report"] and int(state.tick)-int(report.get("observed_tick",0))<=100:
+                mind+="%s near %.0f, %.0f · seen tick %d\nSource: %s · confidence %.0f%%\n" % [UIStyle.safe(report.get("species","threat")),report.x,report.y,report.observed_tick,UIStyle.safe(_name(report.get("source",a.id))),report.get("confidence",.5)*100]
         mind += "\n"+UIStyle.heading("COMMITMENTS")
         for commitment in a.get("commitments",[]).slice(-6):
             mind += "%s · %s\n" % [UIStyle.safe(commitment.get("agreement",commitment.get("description","Task"))),UIStyle.safe(commitment.get("state","pending"))]
@@ -492,11 +498,22 @@ func _inspect() -> void:
         for memory in a.memories.slice(-8): mind += "Tick %d · %s\n" % [memory.get("tick",0),UIStyle.safe(memory.get("content",""))]
         _write_rich(memory_details,mind)
     else:
-        for category in ["buildings","settlements","resources","wildlife"]:
+        for category in ["buildings","settlements","resources","wildlife","threats"]:
             if state.get(category,{}).has(selected):
                 var entity: Dictionary = state[category][selected]
                 home = entity.get("home",entity.id if category == "settlements" else "a")
                 var text := UIStyle.heading(str(entity.get("name",entity.get("kind",entity.get("species",category)))).capitalize())
+                if category=="threats":
+                    text=UIStyle.heading("ZOMBIE  /  Wilderness threat")
+                    text+="Health %.0f / %.0f · Stamina %.0f\n\n" % [entity.hp,entity.get("max_hp",35),entity.stamina]
+                    text+=UIStyle.heading(str(entity.activity).capitalize())
+                    text+="Wandering, perception, pursuit and non-graphic contact follow simulation rules.\n\n"
+                    if entity.get("target")!=null:text+="Following: %s\n\n" % UIStyle.safe(_name(entity.target))
+                    text+="Location %.1f, %.1f\n\n" % [entity.x,entity.y]
+                    text+="God Mode → Threats & wildlife adjusts intensity, spawn areas and the zombie off switch."
+                    _write_rich(details,text)
+                    _write_rich(memory_details,"Nonhuman threats use lightweight simulation behavior. Human inhabitants retain their independent memories and reasoning.")
+                    continue
                 for key in entity:
                     if key in ["id","name","kind","species"]: continue
                     if entity[key] is Dictionary:
@@ -510,6 +527,11 @@ func _inspect() -> void:
     var town: Dictionary = state.settlements.get(home,{})
     var town_text := UIStyle.heading(str(town.get("name",home)))+"%s · %s\n\n" % [str(town.get("conflict","peace")).capitalize(),str(town.get("policy","")).replace("_"," ").capitalize()]
     town_text += UIStyle.heading("COMMUNITY STORES")+UIStyle.goods(town.get("inventory",{}))+"\n\n"+UIStyle.heading("COUNCIL")
+    if town.get("threat_alert",{}).get("active",false):
+        town_text+="\n[color=#efbe83]LOCAL WATCH WARNING[/color]\n"
+        for id in town.threat_alert.get("reports",{}):
+            var report: Dictionary=town.threat_alert.reports[id]
+            town_text+="%s near %.0f, %.0f · seen tick %d\n" % [UIStyle.safe(id),report.x,report.y,report.observed_tick]
     for id in town.get("council",[]): town_text += UIStyle.safe(_name(id))+"\n"
     town_text += "\n"+UIStyle.heading("PROJECTS & TRANSPORT")
     for b in state.buildings.values():
@@ -847,6 +869,7 @@ func _make_actions() -> void:
     action_options(industry,"Repair equipment","equipment_repair",["staff","shield","padded_coat","iron_blade","wool_coat","leather_coat"])
     action_button(industry,"Repair using one tool at a workshop",func(): player_command({"action":"repair_equipment","item":action_value("equipment_repair")}))
     action_button(industry,"Repel selected nearby fantasy threat",func(): player_command({"action":"repel","target":selected}))
+    action_button(industry,"Raise local warning about selected observed threat",func(): player_command({"action":"warn","target":selected}))
     action_button(industry,"Open selected home gate",func(): player_command({"action":"gate","building":selected,"open":true}))
     action_button(industry,"Close selected home gate",func(): player_command({"action":"gate","building":selected,"open":false}))
     var close := Button.new()

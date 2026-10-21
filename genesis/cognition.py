@@ -30,6 +30,7 @@ SYSTEM = (
     'For a reply use speech: concise, specific, in your own voice. Address the latest message and avoid repeated greetings. Reports remain uncertain. '
     'Only explicit recipient accept fulfills an offer. Optional dialogue_actions (up to 2: offer/accept/reject/help/teach/share/commit_work/conflict_response) act with this partner through engine validation. Check outcomes on your next turn; promising is not doing. Do not automatically obey or believe rumors. '
     'Keep useful ongoing plans during conversation. plan_policy defaults to keep; append adds steps; replace requires a concrete revision_reason explaining changed needs, evidence or failure. Never restart completed steps. Empty plan preserves current work. '
+    'Threat reports have sources and timestamps, not live tracking. Choose your own threat_response, warning, cooperation or defensive construction when warranted; zombies cannot negotiate, but human disagreements can. Do not invent sightings. Use report_threat with a nearby partner to communicate a specific known sighting. '
     'Return a JSON object: {"goal":"free-form personal goal", "plan":[{"action":"observe"}], '
     '"speech":"optional reply", "stance":"agree|question|disagree|neutral", '
     '"reflection":"brief lesson or reconsideration", "end_conversation":false}.'
@@ -82,8 +83,10 @@ def fit_context(payload, limit):
         data.pop('capabilities', None)
         original = data['agent']
         data['agent'] = {key: original[key] for key in ('identity', 'needs', 'inventory', 'location', 'failure') if key in original}
+        reports = original.get('perception',{}).get('threat_reports',[])[-2:]
+        if reports: data['agent']['threat_reports'] = reports
         data['pending_offers'] = data.get('pending_offers', [])[-1:]
-        data.pop('social_opportunities', None)
+        data['social_opportunities'] = data.get('social_opportunities', [])[:1]
         if 'conversation' in data:
             data['conversation'].pop('instruction', None)
             partner = data['conversation'].get('partner', {})
@@ -92,7 +95,7 @@ def fit_context(payload, limit):
             turn['text'] = turn['text'][-300:]
     if size() > limit:
         # A small context exposes a useful subset of schemas instead of losing the reply.
-        keep = ('move', 'observe', 'eat', 'drink', 'rest', 'talk', 'offer', 'accept', 'reject', 'help', 'conflict_response')
+        keep = ('move', 'observe', 'eat', 'drink', 'rest', 'talk', 'offer', 'accept', 'reject', 'help', 'conflict_response', 'threat_response', 'warn', 'report_threat')
         data['action_schemas'] = {k: v for k, v in data.get('action_schemas', {}).items() if k in keep}
         if 'conversation' in data:
             data['conversation']['outcomes'] = data['conversation'].get('outcomes', [])[-2:]
@@ -398,7 +401,7 @@ class Scheduler:
                     continue
                 seen = self.events_seen.get(agent.id, 0)
                 important = any(e['id'] > seen and agent.id in e['actors'] and e['kind'] in
-                                ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision','environment_observed','production_completed','threat_observed') for e in world.events[-80:])
+                                ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision','environment_observed','production_completed','threat_observed','threat_contact','threat_warning','threat_report','settlement_warning') for e in world.events[-80:])
                 if world.events:
                     self.events_seen[agent.id] = world.events[-1]['id']
                 # Conversation turns have their own priority and should not trigger unrelated reflection loops.

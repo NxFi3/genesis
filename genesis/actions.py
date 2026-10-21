@@ -19,6 +19,13 @@ def execute(world, command, actor_id='player', planned=False):
         return fail('Resolve or disengage from the current conflict first.')
     target = world.agents.get(command.get('target'))
     try:
+        if action in ('threat_response', 'warn', 'report_threat'):
+            from . import threats
+            if action == 'threat_response':
+                return threats.set_response(world, a, command.get('target'), command.get('choice'))
+            if action == 'report_threat':
+                return threats.report(world, a, target, command.get('threat'))
+            return threats.warn(world, a, command.get('target'))
         if action=='repel':
             from .threats import repel
             return repel(world,a,command.get('target'))
@@ -115,7 +122,8 @@ def execute(world, command, actor_id='player', planned=False):
             if b.progress >= BUILDINGS[b.kind]['duration']:
                 b.complete = True
                 if b.kind in ('wall','gate'):
-                    if any(combat.distance(person,b)<.75 for person in world.agents.values()):
+                    from .predators import occupied
+                    if occupied(world,b.x,b.y):
                         b.progress=BUILDINGS[b.kind]['duration']-.1
                         b.complete=False
                         return fail('Move occupants clear before completing this barrier')
@@ -148,9 +156,17 @@ def execute(world, command, actor_id='player', planned=False):
             return fail('Insufficient owned resource or unsupported item')
         if action == 'repair':
             b = world.buildings.get(command.get('building'))
-            if b and b.home == a.home and combat.distance(a, b) <= 2 and a.inventory['wood'] >= 1 and b.condition < 100:
+            if b and b.kind in ('wall','gate') and b.condition<=0:
+                from .predators import occupied
+                if occupied(world,b.x,b.y): return fail('Move occupants clear before restoring this barrier')
+            if b and b.home == a.home and combat.distance(a, b) <= 2 and a.inventory['wood'] >= 1 and b.condition < 100 and a.stamina >= 3:
                 a.inventory['wood'] -= 1
+                a.stamina -= 3
                 b.condition = min(100, b.condition+10)
+                a.activity = 'repair'
+                world._blocked_tick = -1
+                world._paths.clear()
+                world.event('repaired', f'{a.name} repaired the {b.kind}, using one wood.', [a.id], building=b.id)
                 return done()
             return fail('Repair requires own damaged building, wood and proximity')
         if action == 'trade':
