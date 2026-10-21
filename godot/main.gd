@@ -1,7 +1,8 @@
-extends Node2D
+extends Control
 
 var api := "http://127.0.0.1:8765"
 const MAP_RECT := Rect2(24, 130, 864, 516)
+const UIStyle = preload("res://ui_style.gd")
 const WorldView = preload("res://world_view.gd")
 var state: Dictionary = {}
 var selected := "a0"
@@ -33,6 +34,7 @@ var view: Node2D
 var settings: PopupPanel
 var setting_fields: Dictionary = {}
 var auto_smoke := false
+var capture_path := ""
 var smoke_frames := 0
 var panning := false
 var settings_open := false
@@ -43,9 +45,18 @@ var action_fields: Dictionary = {}
 var agreement_ids: Array[String] = []
 var proposal_ids: Array[String] = []
 var placing_site := false
+var chat_status: Label
+var talk_button: Button
+var journal: PopupPanel
+var journal_events: RichTextLabel
+var journal_conversations: RichTextLabel
+var show_all_conversations := false
+var journal_open := false
 
 func _ready() -> void:
     for argument in OS.get_cmdline_user_args():
+        if argument.begins_with("--capture="):
+            capture_path = argument.trim_prefix("--capture=")
         if argument.begins_with("--api="):
             api = argument.trim_prefix("--api=")
     poll = HTTPRequest.new()
@@ -56,6 +67,8 @@ func _ready() -> void:
     sender.timeout = 15
     add_child(sender)
     sender.request_completed.connect(_received_command)
+    theme = UIStyle.make_theme()
+    mouse_filter = Control.MOUSE_FILTER_IGNORE
     _make_ui()
     poll.request(api + "/state")
     auto_smoke = "--smoke" in OS.get_cmdline_user_args()
@@ -83,15 +96,24 @@ func button_at(text: String, pos: Vector2, callback: Callable, width: float = 10
 func rich_tab(tabs: TabContainer, title: String) -> RichTextLabel:
     var item := RichTextLabel.new()
     item.name = title
-    item.bbcode_enabled = false
+    item.bbcode_enabled = true
+    item.add_theme_constant_override("line_separation", 4)
+    item.meta_clicked.connect(_focus_link)
     item.selection_enabled = true
     item.add_theme_font_size_override("normal_font_size", 14)
     tabs.add_child(item)
     return item
 
 func _make_ui() -> void:
+    for rect in [Rect2(14, 120, 884, 536), Rect2(900, 124, 370, 732)]:
+        var panel := Panel.new()
+        panel.position = rect.position
+        panel.size = rect.size
+        panel.add_theme_stylebox_override("panel", UIStyle.box(Color("172923"), Color("43584a"), 9))
+        panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        add_child(panel)
     label_at("G E N E S I S  2", Vector2(24, 14), 28).modulate = Color("e3ce9a")
-    label_at("THE LIVING WORLD  /  Independent minds, shared world", Vector2(305, 28), 14)
+    label_at("THE LIVING WORLD  /  A chronicle of two settlements", Vector2(305, 28), 14)
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
     mode_button = button_at("Player mode", Vector2(900, 15), _toggle_mode, 130)
@@ -103,7 +125,8 @@ func _make_ui() -> void:
     button_at("5×", Vector2(1111, 53), func(): send({"action": "speed", "speed": 10}), 50)
     button_at("Step", Vector2(1168, 53), func(): send({"action": "step"}), 97)
     button_at("Follow", Vector2(900, 91), func(): view.follow_agent = not view.follow_agent, 95)
-    button_at("Reset camera", Vector2(1005, 91), func(): view.reset_camera(), 130)
+    button_at("Focus", Vector2(1005, 91), func(): view.focus_selected(), 60)
+    button_at("Map", Vector2(1075, 91), func(): view.reset_camera(), 60)
     button_at("Reason now", Vector2(1145, 91), func(): send({"action": "request_reasoning", "target": selected}), 120)
     var clip := Control.new()
     clip.position = MAP_RECT.position
@@ -127,8 +150,8 @@ func _make_ui() -> void:
     memory_details = rich_tab(inspector, "Mind")
     inventory_details = rich_tab(inspector, "Player")
     settlement_details = rich_tab(inspector, "Town")
-    label_at("WASD: player / observer camera • wheel: zoom • middle drag: pan", Vector2(24, 652), 13)
-    label_at("PLAYER ACTIONS — proximity and inventory rules apply", Vector2(910, 552), 12)
+    label_at("WASD move / pan · wheel zoom · middle drag · F focus · Home fit map", Vector2(24, 657), 12)
+    label_at("ACTIONS  /  requires reach & supplies", Vector2(910, 552), 12)
     button_at("Gather", Vector2(910, 578), func(): player_command({"action": "gather"}), 80, true)
     button_at("Rest", Vector2(998, 578), func(): player_command({"action": "rest"}), 80, true)
     button_at("Eat", Vector2(1086, 578), func(): player_command({"action": "eat"}), 80, true)
@@ -150,7 +173,10 @@ func _make_ui() -> void:
     button_at("Plan building", Vector2(179, 681), func(): player_command({"action": "build", "kind": building_choice.get_item_text(building_choice.selected)}), 120, true)
     button_at("Build work", Vector2(309, 681), func(): player_command({"action": "work"}), 110, true)
     button_at("More actions…", Vector2(440, 681), _open_actions, 135, true)
-    label_at("Gold: player • Amber: dispute", Vector2(590, 689), 12)
+    label_at("Gold traveler · Green Willowmere · Blue Stonehaven", Vector2(24, 112), 11)
+    button_at("Journal", Vector2(590, 681), func(): journal.popup_centered(); journal_open = true, 95)
+    button_at("Map labels", Vector2(695, 681), func(): view.labels_visible = not view.labels_visible, 100)
+    button_at("Icons", Vector2(805, 681), func(): view.details_visible = not view.details_visible, 75)
     history_tabs = TabContainer.new()
     history_tabs.position = Vector2(24, 724)
     history_tabs.size = Vector2(864, 132)
@@ -159,18 +185,22 @@ func _make_ui() -> void:
     conversation_history = rich_tab(history_tabs, "Conversations")
     dialogue = TextEdit.new()
     dialogue.position = Vector2(910, 704)
-    dialogue.size = Vector2(350, 86)
+    dialogue.size = Vector2(350, 78)
     dialogue.placeholder_text = "Type any message to the selected nearby inhabitant…"
     dialogue.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
     add_child(dialogue)
-    button_at("Talk", Vector2(910, 798), _talk, 100, true)
-    button_at("Share claim", Vector2(1020, 798), func(): player_command({"action": "claim", "target": selected, "message": dialogue.text}), 120, true)
-    button_at("New world…", Vector2(1150, 798), _new_world_dialog, 110)
+    chat_status = label_at("Select an inhabitant to talk", Vector2(910, 787), 12)
+    chat_status.size = Vector2(350, 22)
+    chat_status.clip_text = true
+    talk_button = button_at("Send message", Vector2(910, 814), _talk, 120, true)
+    button_at("Share news", Vector2(1040, 814), func(): player_command({"action": "claim", "target": selected, "message": dialogue.text}), 120, true)
+    button_at("New world…", Vector2(1170, 814), _new_world_dialog, 85)
     status_label = label_at("Ready. LLM status is shown above; dialogue never blocks world rendering.", Vector2(24, 862), 13)
     status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     status_label.size = Vector2(1240, 35)
     _make_settings()
     _make_actions()
+    _make_journal()
 
 func _toggle_mode() -> void:
     player_mode = not player_mode
@@ -214,7 +244,7 @@ func _process(delta: float) -> void:
             busy = false
             status_label.text = "Could not send command: %s" % error_string(error)
     var focused := get_viewport().gui_get_focus_owner()
-    if not settings_open and not actions_open and not placing_site and not (focused is LineEdit or focused is TextEdit):
+    if not settings_open and not actions_open and not journal_open and not placing_site and not (focused is LineEdit or focused is TextEdit):
         var direction := Vector2.ZERO
         if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP): direction.y -= 1
         if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN): direction.y += 1
@@ -231,30 +261,76 @@ func _process(delta: float) -> void:
     if auto_smoke:
         smoke_frames += 1
         if not state.is_empty() and smoke_frames > 30:
+            auto_smoke = false
             assert(state.agents.size() >= 2)
             assert(state.terrain.size() > 0)
             assert(not details.text.is_empty())
             assert(not inventory_details.text.is_empty())
+            var old_zoom: float = view.zoom
             view.zoom_at(1.1, Vector2(100,100))
-            assert(view.zoom > 1)
+            assert(view.zoom > old_zoom)
+            view.focus_selected()
+            assert(view.zoom >= 1.3)
+            assert(view.terrain_layer.redraw_count > 0)
+            assert(theme != null)
+            assert(details.bbcode_enabled)
+            journal.popup_centered()
+            assert(journal.visible)
+            await get_tree().process_frame
+            await get_tree().process_frame
+            var journal_close := journal.find_child("CloseJournal",true,false) as Button
+            var journal_tabs := journal.find_child("JournalTabs",true,false) as TabContainer
+            assert(journal_close.size.y < 60)
+            assert(not journal_close.get_rect().intersects(journal_tabs.get_rect()))
+            journal.hide()
             view.reset_camera()
             _open_settings()
             assert(settings.visible)
             assert(not setting_fields.model.text.is_empty())
+            assert(setting_fields.context_limit.text.is_valid_int())
+            assert(setting_fields.max_concurrency.text.is_valid_int())
             settings.hide()
             _open_actions()
             assert(actions_popup.visible)
             assert(action_fields.recipe.item_count == 4)
+            await get_tree().process_frame
+            await get_tree().process_frame
+            var actions_close := actions_popup.find_child("CloseActions",true,false) as Button
+            var actions_tabs := actions_popup.find_child("ActionTabs",true,false) as TabContainer
+            assert(actions_close.size.y < 60)
+            assert(not actions_close.get_rect().intersects(actions_tabs.get_rect()))
             actions_popup.hide()
             _toggle_mode()
             assert(not player_mode)
             _toggle_mode()
             assert(player_mode)
             print("GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes, cognition settings and action panels")
-            get_tree().quit(0)
+            auto_smoke = false
+            _finish_smoke()
         elif smoke_frames > 1200:
             push_error("GENESIS smoke timed out waiting for backend")
             get_tree().quit(1)
+
+func _finish_smoke() -> void:
+    if not capture_path.is_empty():
+        await get_tree().process_frame
+        await get_tree().process_frame
+        await RenderingServer.frame_post_draw
+        var picture := get_viewport().get_texture().get_image()
+        if picture == null or picture.is_empty():
+            push_error("Capture requires a graphical rendering driver")
+            get_tree().quit(1)
+            return
+        var error := picture.save_png(capture_path)
+        if error != OK:
+            push_error("Cannot write capture: " + error_string(error))
+            get_tree().quit(1)
+            return
+        print("Rendered capture: " + capture_path)
+        view.focus_selected()
+        await RenderingServer.frame_post_draw
+        get_viewport().get_texture().get_image().save_png(capture_path.get_basename()+"-detail.png")
+    get_tree().quit(0)
 
 func _received_state(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
     if code != 200:
@@ -264,22 +340,31 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     if not parsed is Dictionary:
         return
     state = parsed
-    view.state = state
+    view.accept_state(state)
     view.selected = selected
     var environment: Dictionary = state.get("environment", {})
-    top_stats.text = "Tick %d • %s %s • %d inhabitants • %d buildings • %.2f ms/tick • %s" % [state.tick, state.season, state.get("weather", ""), state.agents.size()-1, state.buildings.size(), state.get("tick_ms", 0), "PAUSED" if state.get("paused", false) else "RUNNING"]
+    top_stats.text = "%s · %s · Day %d, %02d:00 · %d inhabitants · %d buildings · %s" % [str(state.season).capitalize(),str(state.get("weather","clear")).capitalize(),1+int(state.tick)/240,int(state.get("hour",0)),state.agents.size()-1,state.buildings.size(),"Paused" if state.get("paused",false) else "Living world"]
+    top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick" % [state.tick,state.get("tick_ms",0)]
+    top_stats.mouse_filter = Control.MOUSE_FILTER_PASS
     var cognition: Dictionary = state.get("cognition", {})
     var metrics: Dictionary = cognition.get("metrics", {})
     var config: Dictionary = cognition.get("config", {})
-    cognition_stats.tooltip_text = str(metrics.get("last_error", ""))
+    cognition_stats.tooltip_text = "Completed %d · Failed %d · %.0f ms last reply · %.1f calls/min\n%s" % [metrics.get("completed",0),metrics.get("failed",0),metrics.get("latency_ms",0),metrics.get("throughput_per_minute",0),str(metrics.get("last_error",""))]
     cognition_stats.mouse_filter = Control.MOUSE_FILTER_PASS
     if not str(state.get("error", "")).is_empty():
         status_label.text = "Simulation paused: " + str(state.error)
-    cognition_stats.text = "%s • %s / %s • queued %d • active %d • completed %d • failed %d • %.0f ms • %.1f calls/min" % [str(cognition.get("mode", "offline")).to_upper(), config.get("provider", "disabled"), config.get("model", "no model"), metrics.get("queued", 0), metrics.get("inflight", 0), metrics.get("completed", 0), metrics.get("failed", 0), metrics.get("latency_ms", 0), metrics.get("throughput_per_minute", 0)]
+    if cognition.get("mode","offline") == "offline":
+        cognition_stats.text = "OFFLINE · Deterministic simulation · Enable local Ollama in Settings"
+    else:
+        cognition_stats.text = "LLM MINDS · %s · %d thinking · %d queued%s" % [config.get("model","local model"),metrics.get("inflight",0),metrics.get("queued",0)," · Provider error (hover for details)" if not str(metrics.get("last_error","")).is_empty() else ""]
     var lines: Array[String] = []
-    for e in state.events.slice(maxi(0, state.events.size()-30)):
-        lines.append("[%04d] %s" % [e.tick, e.text])
-    timeline.text = "\n".join(lines)
+    for e in state.events.slice(maxi(0, state.events.size()-50)):
+        if e.kind == "reasoning": continue
+        var caption := UIStyle.safe(e.text)
+        if not e.actors.is_empty(): caption = "[url=%s]%s[/url]" % [e.actors[0], caption]
+        lines.append("[color=#a2b4ad]%04d · %-10s[/color] %s" % [e.tick, str(e.kind).replace("_", " ").capitalize(), caption])
+    _write_rich(timeline, "\n".join(lines), true)
+    _write_rich(journal_events, timeline.text, true)
     var new_ids: Array[String] = []
     for category in ["agents", "settlements", "buildings", "resources", "wildlife"]:
         for key in state[category]: new_ids.append(key)
@@ -305,39 +390,157 @@ func _received_command(_result: int, code: int, _headers: PackedStringArray, bod
     elif code != 200:
         status_label.text = "Command failed: backend unreachable"
 
+func _write_rich(item: RichTextLabel, value: String, stick_bottom := false) -> void:
+    if item.text == value: return
+    var bar := item.get_v_scroll_bar()
+    var old_value := bar.value
+    var at_bottom := bar.value >= bar.max_value-bar.page-4
+    item.text = value
+    if stick_bottom and at_bottom:
+        item.scroll_to_line(maxi(0,item.get_line_count()-1))
+    else:
+        bar.set_deferred("value",old_value)
+
+func _focus_link(id: Variant) -> void:
+    selected = str(id)
+    _inspect()
+    view.focus_selected()
+
+func _name(id: String) -> String:
+    return str(state.agents.get(id, state.settlements.get(id, {})).get("name", id))
+
 func _inspect() -> void:
     view.selected = selected
     var home := "a"
     if state.agents.has(selected):
         var a: Dictionary = state.agents[selected]
         home = a.home
-        var text := "%s / %s\n%s • age %d • home %s\n\nHP %.0f / %.0f   Stamina %.0f\nHunger %.0f   Thirst %.0f   Fatigue %.0f\nShelter: %s   Safety: %s   Social: %s\nSpeed %.2f   Defense %.0f\nEquipment: %s\n\nActivity: %s\nWhy: %s\n\nSkills: %s\nPersonality: %s\n\nInventory: %s\nRelationships: %s" % [a.name, a.id, a.occupation, a.age, a.home, a.hp, a.max_hp, a.stamina, a.hunger, a.thirst, a.fatigue, a.get("shelter", "n/a"), a.get("safety", "n/a"), a.get("social", "n/a"), a.speed, a.defense, ", ".join(a.equipment), a.activity, a.reason, JSON.stringify(a.skills), JSON.stringify(a.personality), JSON.stringify(a.inventory), JSON.stringify(a.relationships)]
-        details.text = text
-        memory_details.text = "GOALS\n%s\n\nPLAN\n%s\n\nPRIVATE KNOWLEDGE / BELIEFS\n%s\n\nREFLECTIONS\n%s\n\nRECENT MEMORIES\n" % [JSON.stringify(a.goals, "  "), JSON.stringify(a.get("plan", a.get("plans", [])), "  "), JSON.stringify(a.knowledge, "  "), str(a.get("reflection", ""))]
-        for m in a.memories.slice(maxi(0, a.memories.size()-8)):
-            memory_details.text += "[%d] %s (source: %s, confidence: %s)\n" % [m.get("tick", 0), m.get("content", ""), m.get("source", "unknown"), m.get("confidence", 1)]
+        var text := UIStyle.heading(a.name + "  /  " + str(a.occupation).capitalize())
+        text += "%s · age %d\n\n" % [UIStyle.safe(_name(a.home)), a.age]
+        text += UIStyle.heading("WELLBEING")
+        text += "Health  %.0f / %.0f     Stamina  %.0f\nHunger  %.0f    Thirst  %.0f    Fatigue  %.0f\nSafety need  %.0f    Company need  %.0f\n\n" % [a.hp,a.max_hp,a.stamina,a.hunger,a.thirst,a.fatigue,a.get("safety",0),a.get("social",0)]
+        text += UIStyle.heading(str(a.activity).capitalize()) + UIStyle.safe(a.reason) + "\n\n"
+        text += UIStyle.heading("CARRIED GOODS") + UIStyle.goods(a.inventory) + "\n\n"
+        text += UIStyle.heading("EQUIPMENT") + UIStyle.safe(", ".join(a.equipment) if not a.equipment.is_empty() else "No equipment") + "\n\n"
+        text += UIStyle.heading("SKILLS & CHARACTER")
+        for skill in a.skills: text += "%s  %.1f  ·  " % [UIStyle.safe(str(skill).capitalize()),a.skills[skill]]
+        text += "\n"
+        for attribute in a.personality: text += "%s %d%%  ·  " % [UIStyle.safe(str(attribute).capitalize()),a.personality[attribute]*100]
+        text += "\n\n" + UIStyle.heading("RELATIONSHIPS")
+        if a.relationships.is_empty(): text += "No established relationships yet.\n"
+        for id in a.relationships:
+            var r: Dictionary = a.relationships[id]
+            text += "%s\n  Trust %+.0f%% · Familiarity %.0f%%\n  Cooperation %.0f%% · Rivalry %.0f%%\n" % [UIStyle.safe(_name(id)),r.get("trust",0)*100,r.get("familiarity",0)*100,r.get("cooperation",0)*100,r.get("rivalry",0)*100]
+        _write_rich(details,text)
+        var mind := UIStyle.heading("PERSONAL GOALS")
+        for goal in a.goals.slice(-4): mind += "• %s\n" % UIStyle.safe(goal.get("description",goal))
+        mind += "\n" + UIStyle.heading("PLAN  /  " + str(a.get("plan_status","idle")).capitalize())
+        var plan: Array = a.get("plan",[])
+        for index in range(plan.size()):
+            var step: Dictionary = plan[index]
+            var pieces: Array[String] = []
+            for key in step:
+                if key != "action" and not str(key).begins_with("_"): pieces.append("%s: %s" % [key,step[key]])
+            mind += "%s %d. %s %s\n" % ["✓" if index < a.get("plan_index",0) else "→",index+1,UIStyle.safe(str(step.action).capitalize()),UIStyle.safe(", ".join(pieces))]
+        if not str(a.get("plan_error","")).is_empty(): mind += "[color=#e6ae74]"+UIStyle.safe(a.plan_error)+"[/color]\n"
+        mind += "\n"+UIStyle.safe(a.get("plan_feedback",""))+"\n"
+        mind += "\n"+UIStyle.heading("COMMITMENTS")
+        for commitment in a.get("commitments",[]).slice(-6):
+            mind += "%s · %s\n" % [UIStyle.safe(commitment.get("agreement",commitment.get("description","Task"))),UIStyle.safe(commitment.get("state","pending"))]
+        mind += "\n"+UIStyle.heading("REMEMBERED FROM YOU")
+        var remembered := false
+        for belief in a.knowledge:
+            if belief.get("source","") == "player":
+                mind += "• %s\n  Heard at %d · %s · confidence %.0f%%\n" % [UIStyle.safe(belief.claim),belief.tick,UIStyle.safe(belief.get("status","unverified")),belief.get("confidence",.5)*100]
+                remembered = true
+        if not remembered: mind += "No remembered report from the traveler yet.\n"
+        mind += "\n"+UIStyle.heading("PRIVATE KNOWLEDGE")
+        for belief in a.knowledge.slice(-8):
+            mind += "• %s\n  Source: %s · confidence %.0f%%\n" % [UIStyle.safe(belief.claim),UIStyle.safe(_name(str(belief.source))),belief.get("confidence",.5)*100]
+        mind += "\n"+UIStyle.heading("REFLECTION")+UIStyle.safe(a.get("reflection",""))+"\n\n"+UIStyle.heading("RECENT MEMORIES")
+        for memory in a.memories.slice(-8): mind += "Tick %d · %s\n" % [memory.get("tick",0),UIStyle.safe(memory.get("content",""))]
+        _write_rich(memory_details,mind)
     else:
-        for category in ["buildings", "settlements", "resources", "wildlife"]:
+        for category in ["buildings","settlements","resources","wildlife"]:
             if state[category].has(selected):
                 var entity: Dictionary = state[category][selected]
-                home = entity.get("home", entity.id if category == "settlements" else "a")
-                details.text = category.to_upper() + "\n" + JSON.stringify(entity, "  ")
-                memory_details.text = "Select an inhabitant to inspect its individual mind."
-    var player: Dictionary = state.agents.get("player", {})
-    inventory_details.text = "TRAVELER / PLAYER\n\nInventory\n%s\n\nEquipment\n%s\n\nProperty\n%s\n\nNeeds\nHP: %s   Hunger: %s   Thirst: %s\n\nMovement requires passable terrain and stamina. Actions use real items. Observer mode prevents player commands." % [JSON.stringify(player.get("inventory", {}), "  "), JSON.stringify(player.get("equipment", []), "  "), JSON.stringify(player.get("property", []), "  "), player.get("hp", "?"), player.get("hunger", "?"), player.get("thirst", "?")]
-    settlement_details.text = JSON.stringify(state.settlements.get(home, {}), "  ")
-    var histories = state.get("conversations", {})
-    var conversations: Array = histories.values() if histories is Dictionary else histories
+                home = entity.get("home",entity.id if category == "settlements" else "a")
+                var text := UIStyle.heading(str(entity.get("name",entity.get("kind",entity.get("species",category)))).capitalize())
+                for key in entity:
+                    if key in ["id","name","kind","species"]: continue
+                    if entity[key] is Dictionary:
+                        text += "\n"+UIStyle.heading(str(key).capitalize())
+                        for subkey in entity[key]: text += "%s: %s\n" % [UIStyle.safe(subkey),UIStyle.safe(entity[key][subkey])]
+                    else: text += "%s: %s\n" % [UIStyle.safe(str(key).capitalize()),UIStyle.safe(entity[key])]
+                _write_rich(details,text)
+                _write_rich(memory_details,"Select an inhabitant to inspect its individual mind.")
+    var player: Dictionary = state.agents.get("player",{})
+    _write_rich(inventory_details, UIStyle.heading("THE TRAVELER")+"Health %.0f · Hunger %.0f · Thirst %.0f\n\n" % [player.get("hp",0),player.get("hunger",0),player.get("thirst",0)] + UIStyle.heading("INVENTORY")+UIStyle.goods(player.get("inventory",{}))+"\n\n"+UIStyle.heading("EQUIPMENT")+UIStyle.safe(", ".join(player.get("equipment",[])))+"\n\n"+UIStyle.heading("PROPERTY")+UIStyle.safe(", ".join(player.get("property",[])))+"\n\nActions require reach, stamina and owned materials.")
+    var town: Dictionary = state.settlements.get(home,{})
+    var town_text := UIStyle.heading(str(town.get("name",home)))+"%s · %s\n\n" % [str(town.get("conflict","peace")).capitalize(),str(town.get("policy","")).replace("_"," ").capitalize()]
+    town_text += UIStyle.heading("COMMUNITY STORES")+UIStyle.goods(town.get("inventory",{}))+"\n\n"+UIStyle.heading("COUNCIL")
+    for id in town.get("council",[]): town_text += UIStyle.safe(_name(id))+"\n"
+    town_text += "\n"+UIStyle.heading("PROJECTS & TRANSPORT")
+    for b in state.buildings.values():
+        if b.home == home and not b.complete: town_text += "%s · %.0f work completed\n" % [str(b.kind).capitalize(),b.progress]
+    for shipment in state.get("shipments",{}).values():
+        if shipment.get("origin","") == home: town_text += "%s → %s · %s\n" % [UIStyle.safe(shipment.id),UIStyle.safe(_name(str(shipment.get("destination","")))),UIStyle.safe(shipment.state)]
+    _write_rich(settlement_details,town_text)
+    _update_conversations()
+
+func _conversation_text(all_people: bool) -> String:
     var lines: Array[String] = []
-    for conversation in conversations:
-        if selected not in conversation.get("participants", []) and selected != "player": continue
-        lines.append("— %s / %s —" % [conversation.get("id", "conversation"), conversation.get("state", "")])
-        if conversation.has("error"): lines.append("Status: " + str(conversation.error))
-        for turn in conversation.get("turns", []):
-            var speaker: String = str(turn.get("speaker", "?"))
-            var name: String = str(state.agents.get(speaker, {}).get("name", speaker))
-            lines.append("[%d] %s (%s): %s" % [turn.get("tick", 0), name, turn.get("source", "unknown"), turn.get("text", "")])
-    conversation_history.text = "\n".join(lines) if not lines.is_empty() else "No conversation history for this selection. Agent conversations appear here only when generated; offline events are not presented as model dialogue."
+    for c in state.get("conversations",{}).values():
+        if not all_people and selected not in c.get("participants",[]): continue
+        var names: Array[String] = []
+        for id in c.participants: names.append(_name(id))
+        lines.append(UIStyle.heading(" & ".join(names)) + "[color=#a2b4ad]%s · %s[/color]" % [UIStyle.safe(c.get("topic", "Conversation")),UIStyle.safe(str(c.state).replace("_"," "))])
+        if c.has("error"): lines.append("[color=#e6ae74]"+UIStyle.safe(c.error)+"[/color]")
+        for outcome in c.get("outcomes",[]).slice(-4):
+            lines.append("[color=#e0bd7c]Confirmed: %s · %s[/color]" % [UIStyle.safe(outcome.action),UIStyle.safe(outcome.message)])
+        for turn in c.get("turns",[]):
+            lines.append("[color=#89c5b3]%s[/color] [color=#a2b4ad]· %d · %s[/color]\n%s\n" % [UIStyle.safe(_name(str(turn.speaker))),turn.get("tick",0),UIStyle.safe(turn.get("source","unknown")),UIStyle.safe(turn.get("text",""))])
+    return "\n".join(lines) if not lines.is_empty() else "No conversations yet. In LLM mode, nearby inhabitants may choose to talk. Select someone nearby to send your own message."
+
+func _update_conversations() -> void:
+    _write_rich(conversation_history,_conversation_text(false),true)
+    _write_rich(journal_conversations,_conversation_text(show_all_conversations),true)
+    var mode: String = state.get("cognition",{}).get("mode","offline")
+    chat_status.text = "Offline · enable Ollama in Settings" if mode == "offline" else "Ready · select a nearby inhabitant"
+    var jobs: Dictionary = state.get("cognition",{}).get("agents",{})
+    if jobs.has(selected): chat_status.text = "%s · %s" % [_name(selected),str(jobs[selected]).capitalize()]
+    for c in state.get("conversations",{}).values():
+        if selected in c.participants and "player" in c.participants:
+            if c.state == "waiting_player": chat_status.text = "Your turn · reply below"
+            elif c.state == "active": chat_status.text = "Awaiting reply · the world continues"
+            elif c.state == "failed": chat_status.text = "Reply failed · see Conversations"
+    chat_status.tooltip_text = chat_status.text
+
+func _make_journal() -> void:
+    journal = PopupPanel.new()
+    journal.size = Vector2i(900,650)
+    journal.popup_hide.connect(func(): journal_open = false)
+    add_child(journal)
+    var frame := Control.new()
+    journal.add_child(frame)
+    var tabs := TabContainer.new()
+    tabs.name = "JournalTabs"
+    tabs.position = Vector2(0,36)
+    tabs.size = Vector2(868,530)
+    frame.add_child(tabs)
+    journal_events = rich_tab(tabs,"World chronicle")
+    journal_conversations = rich_tab(tabs,"Conversations")
+    var all_toggle := CheckBox.new()
+    all_toggle.text = "Observe all conversations (otherwise selected inhabitant)"
+    all_toggle.position = Vector2.ZERO
+    all_toggle.toggled.connect(func(value): show_all_conversations = value; _update_conversations())
+    frame.add_child(all_toggle)
+    var close := Button.new()
+    close.name = "CloseJournal"
+    close.text = "Return to world"
+    close.position = Vector2(710,576)
+    close.pressed.connect(func(): journal.hide())
+    frame.add_child(close)
 
 func _make_settings() -> void:
     settings = PopupPanel.new()
@@ -384,7 +587,9 @@ func _open_settings() -> void:
     var config: Dictionary = state.get("cognition", {}).get("config", {})
     var defaults := {"provider": "ollama", "model": "qwen2.5:7b", "endpoint": "http://127.0.0.1:11434", "context_limit": 8000, "timeout": 12, "max_concurrency": 2, "per_agent_budget": 4, "global_budget": 60}
     setting_fields.enabled.button_pressed = config.get("enabled", false)
-    for key in defaults: setting_fields[key].text = str(config.get(key, defaults[key]))
+    for key in defaults:
+        var value = config.get(key,defaults[key])
+        setting_fields[key].text = str(int(value)) if key in ["context_limit","max_concurrency","per_agent_budget","global_budget"] else str(value)
     settings_open = true
     settings.popup_centered()
 
@@ -429,6 +634,10 @@ func _new_world_dialog() -> void:
     dialog.popup_centered()
 
 func _unhandled_input(event: InputEvent) -> void:
+    if settings_open or actions_open or journal_open: return
+    if event is InputEventKey and event.pressed:
+        if event.keycode == KEY_F: view.focus_selected()
+        if event.keycode == KEY_HOME: view.reset_camera()
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and placing_site:
         placing_site = false
         status_label.text = "Building placement cancelled."
@@ -511,10 +720,13 @@ func _make_actions() -> void:
     actions_popup.size = Vector2i(620, 620)
     actions_popup.popup_hide.connect(func(): actions_open = false)
     add_child(actions_popup)
+    var frame := Control.new()
+    actions_popup.add_child(frame)
     var tabs := TabContainer.new()
-    tabs.position = Vector2(16, 16)
+    tabs.name = "ActionTabs"
+    tabs.position = Vector2.ZERO
     tabs.size = Vector2(588, 540)
-    actions_popup.add_child(tabs)
+    frame.add_child(tabs)
     var trade := VBoxContainer.new()
     trade.name = "Trade"
     tabs.add_child(trade)
@@ -571,11 +783,12 @@ func _make_actions() -> void:
     action_button(build, "Contribute work to selected project", func(): player_command({"action": "work", "building": selected}))
     action_button(build, "Repair selected building", func(): player_command({"action": "repair", "building": selected}))
     var close := Button.new()
+    close.name = "CloseActions"
     close.text = "Close"
-    close.position = Vector2(16, 566)
+    close.position = Vector2(0, 550)
     close.size = Vector2(588, 32)
     close.pressed.connect(func(): actions_popup.hide())
-    actions_popup.add_child(close)
+    frame.add_child(close)
 
 func _open_actions() -> void:
     if not player_mode:

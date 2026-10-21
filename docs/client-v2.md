@@ -1,41 +1,49 @@
-# Genesis 2 client milestone
+# Genesis client: visual and interaction update
 
-The Godot client remains a presentation/input layer over the Python simulation. Its camera and interpolated display positions never mutate authoritative positions.
+The Godot client remains a presentation/input layer over the Python simulation. Camera interpolation, procedural artwork and feedback never change authoritative positions or outcomes. No external art, font downloads, shaders or new runtime dependencies are required.
+
+![Actual Godot rendering in a virtual X11 display](images/colony-overview.png)
+
+## World presentation
+
+- A retained terrain layer draws patterned grass, clustered trees, rock ridges, rippled water/shorelines, crop rows, roads and planked bridges. Seasons tint vegetation. It redraws when terrain, bridges or season change, rather than every animation frame.
+- All ten building types have distinct silhouettes: house roofs/windows, planted farms, storage crates, workshop chimney/tools, striped markets, road paving, bridge rails, wells, banners on halls, and crenellated watchtowers. Scaffolds and a work-progress bar distinguish construction sites.
+- Humans wear settlement colors; the traveler wears gold, guards carry shields/staffs, and incapacitated people lie down with a neutral aid marker. Selection/follow rings, health bars and activity markers show visible state. Deer have antlers; boars have a compact animal silhouette.
+- Active conversations show speech markers. Material carriers/couriers have cargo markers. Construction/rest have activity cues. Disputes connect their participants. Completed construction, exchanges and conflict outcomes briefly appear on the map, once per event.
+- Labels stay a readable size while zooming. Settlement names and selected entity activity remain inspectable. Labels/icons can be toggled. Follow interpolates smoothly; Focus/F centers the selected entity; Map/Home fits the whole world; wheel zooms at the cursor; middle drag pans.
+
+![Focused settlement view](images/colony-detail.png)
 
 ## Interaction
 
-- Player / Observer switches input modes. Player mode moves the Traveler using held WASD/arrows. Observer mode pans the camera with the same keys and disables player action buttons.
-- Mouse wheel zooms around the cursor. Middle drag pans. Follow centers the selected inhabitant; Reset camera restores the complete world map. Map drawing is clipped to its viewport so zoomed terrain cannot obscure controls.
-- Click entities or use the selector. Agent, Mind, Player, and Town inspector tabs separate needs/activity, private goals/plans/memories, player inventory/equipment/property, and settlement state.
-- The Conversations tab displays persisted turns from the selected inhabitant's conversations, including speaker, tick, and source. It labels generated turns by source and never fabricates a model response. Talk opens this history tab and queues a request; polling, camera control, and rendering continue while inference runs.
-- The Settings popup controls provider, model, backend endpoint, context limit, timeout, concurrency, per-agent budget, and global budget. Apply uses the engine's `configure_cognition` command; the backend validates settings. Credentials are deliberately absent from this form. Cognition mode and measured request counts/latency/throughput are visible in the header. An enabled mode alone does not prove a model is reachable.
-- Player actions include gathering, consumption, rest, trade, negotiation and combat responses, supplies, building selection, and construction work. The engine remains responsible for eligibility, resources, duration, and outcomes.
-- New World explicitly replaces in-memory state; Save first to preserve it. Save and Load controls remain available in either mode.
+The slate/green theme and warm headings apply to inspectors, inventory, journal, settings and action panels. Needs, goods, skills, goals, individual plan steps, knowledge sources/confidence, memories and relationships are formatted as readable sections. The Mind tab explicitly shows reports **remembered from the player**, including uncertainty. Old saves keep existing identities; newly generated worlds use distinct fictional personal names.
 
-Default backend: `http://127.0.0.1:8765`. To point the Godot client at another local backend, use `godot --path godot -- --api=http://127.0.0.1:8767`.
+WASD/arrows move the Traveler in Player mode and pan the camera in Observer mode. Observer mode disables player actions. Click entities or use the selector; event links focus their actor. Map drawing stays clipped to its viewport.
 
-## Executed checks
+**Send message** sends arbitrary text to a nearby selected inhabitant in LLM mode. Conversations show source-labeled turns, topic, status, failures and mechanically confirmed action outcomes. Queue/thinking/your-turn status accompanies the input. NPC speech is model-authored; offline activity is never presented as generated dialogue. **Journal** expands events and conversations, with an option to observe all discussions instead of the selected inhabitant only. Inference and HTTP polling remain asynchronous.
 
-Godot 4.6.3 on Linux imported the project and executed the actual main scene against a running Python backend with a fresh two-settlement world. The headless smoke request retrieved live state and asserted that the inspector and player inventory populated, zoom changed correctly, player/observer switches worked, and the cognition settings popup opened with a model value.
+**More actions** exposes Trade, Workshop, Council and Build tabs: voluntary offers/accept/reject, crafting, teaching, stocks, repair, proposals/votes and tile placement. Engine rejection messages appear in the status line. Settings apply validated provider/model/endpoint/budget configuration; credentials are not stored in the UI. Hover the cognition header for measured throughput/latency/errors. Mode and provider errors remain visible without flooding the main header with counters.
+
+The popup layout now has one content root, preventing its close button from covering all tabs. Numeric settings are formatted as integers where required, so an unchanged Settings form can be applied successfully.
+
+## Validation performed
+
+Godot 4.6.3 on Linux passed import, actual-scene smoke against the live Python backend, and the synthetic presentation checks:
 
 ```sh
-# Start a separate backend with an independent test save.
-python3 -m genesis.server --port 8767 --save /tmp/genesis-v2-client-agent-final.sqlite
-# In another shell, assign writable XDG directories if required by the machine.
-godot --headless --path godot -- --smoke --api=http://127.0.0.1:8767
+python3 run.py --headless --offline --port 8768 --save /tmp/genesis-client.sqlite
+# In another terminal:
+bash scripts/check_client.sh http://127.0.0.1:8768
 ```
 
-Result: exit 0, `GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes and cognition settings`.
+The smoke checks populated inspectors/inventory, camera fit/focus/zoom, modes, journal, settings types and popup geometry. `godot/tests/presentation_check.gd` exercises eight terrain and ten building types, construction, both animals, player/guards/incapacitation, conversation/cargo markers, event deduplication, cache invalidation, centered focus and markup escaping.
 
-No desktop display or Xvfb is installed in this execution environment. Actual pixel rendering, mouse/keyboard usability in a graphical window, and desktop Windows execution are **not verified**. The scene smoke is not represented as graphical acceptance or real-model integration.
+**Actual graphical execution also occurred:** Xvfb was extracted to a temporary directory, and Godot ran through X11/Mesa llvmpipe (software OpenGL), not the headless renderer. Captured pixels were inspected. XTest mouse/keyboard events exercised mode switching, movement, focus/zoom, Mind, Journal, action tabs and Settings. Observer movement preserved the player location; player movement changed its authoritative location. Editing the global budget to 65 and clicking Apply changed the backend configuration. The screenshots above come from the real client and simulation.
 
-## Additional action controls
+A graphical smoke can capture both overview and focused images with:
 
-`More actions…` opens four compact tabs without obstructing the normal map controls permanently:
+```sh
+godot --path godot -- --smoke --api=http://127.0.0.1:8768 --capture=/tmp/genesis.png
+```
 
-- **Trade:** propose an offer of owned goods to the selected nearby inhabitant. Pending incoming offers addressed to the player appear in a live selector with Accept/Reject. Acceptance still requires stock and proximity; an offer is never counted as an immediate resource transfer.
-- **Workshop:** select tools, staff, shield, or padded coat; craft through the authoritative engine. Retrieve/deposit any supported store resource, teach a skill or an already-known claim to the selected inhabitant, and repair a selected damaged home building using wood.
-- **Council:** submit a resource-sharing, rationing, open-trade, or defense policy proposal; propose the toolbar-selected building as a group project. Open home-settlement proposals are inspectable and voting controls call the engine, which enforces council membership.
-- **Build:** contribute to a selected construction project or repair it. Explicit tile X/Y placement is supported for valid buildings including roads and bridges. Pick Tile hides the popup so a map click can select a position under the current camera pan/zoom; Escape cancels. The engine validates the location, proximity, and materials.
-
-Player action panels are disabled in Observer mode. Backend rejection messages are shown in the shared status line instead of claiming a failed action completed. The smoke test additionally opens this popup and verifies all four equipment/tool recipe choices exist. The actual command mechanics are covered by backend tests; no desktop usability or graphical acceptance is claimed from this headless scene check.
+This is automated graphical validation in a virtual Linux display. A human desktop playtest, Windows/macOS behavior, accessibility/high-DPI review and hardware-GPU profiling remain unverified. The layout uses a stretched 1280×900 canvas; the procedural art remains deliberately simple.
