@@ -15,7 +15,18 @@ BUILDINGS = {
     'workshop': {'wood': 15, 'stone': 12, 'duration': 18},
     'market': {'wood': 12, 'stone': 6, 'duration': 12},
     'watchtower': {'wood': 15, 'stone': 15, 'duration': 20, 'defense': 3},
+    'road': {'wood': 2, 'stone': 3, 'duration': 4},
+    'bridge': {'wood': 20, 'stone': 8, 'duration': 18},
+    'hall': {'wood': 20, 'stone': 12, 'duration': 20, 'shelter': 10, 'social': 1},
+    'well': {'wood': 8, 'stone': 15, 'duration': 15, 'water': 3},
 }
+RECIPES = {
+    'tools': {'inputs': {'wood': 2, 'metal': 1}, 'output': 1, 'skill': 'craft'},
+    'staff': {'inputs': {'wood': 3, 'tools': 1}, 'equipment': True, 'skill': 'craft'},
+    'shield': {'inputs': {'wood': 4, 'metal': 1}, 'equipment': True, 'skill': 'craft'},
+    'padded_coat': {'inputs': {'food': 3, 'tools': 1}, 'equipment': True, 'skill': 'craft'},
+}
+EVENT_LIMIT = 2048
 PASSABLE = {'plains': 1, 'farmland': 1, 'forest': .7, 'mountain': .5, 'road': 1.3}
 
 
@@ -31,11 +42,31 @@ class World:
         self.stats = {'gathered': 0, 'consumed': 0, 'produced': 0, 'traded': 0, 'built': 0}
         self.next_event = 1
         self.terrain = []
+        self.conversations, self.agreements = {}, {}
+        self.proposals, self.shipments, self.resource_growth = {}, {}, {}
+        self.governance = {}
+        self.next_conflict = 1
+        self.next_shipment = 1
+        self.event_sink = None
+        self._paths = {}
         self._generate(population)
 
     @property
     def season(self):
         return ('spring', 'summer', 'autumn', 'winter')[(self.tick // 250) % 4]
+
+    @property
+    def hour(self):
+        return (self.tick % 240) / 10
+
+    @property
+    def weather(self):
+        # Weather is deterministic from seed and day, without consuming decision RNG.
+        return ('clear', 'rain', 'clear', 'wind', 'clear', 'drought')[(self.seed + self.tick // 120) % 6]
+
+    @property
+    def daylight(self):
+        return 6 <= self.hour < 20
 
     def _generate(self, population):
         river = self.width // 2
@@ -59,6 +90,7 @@ class World:
         for sid, name, x, y in [('a', 'Willowmere', 9, 10), ('b', 'Stonehaven', self.width - 10, 18)]:
             s = Settlement(sid, name, x, y)
             self.settlements[sid] = s
+            self.governance[sid] = {'leader': None, 'tax': .1, 'sharing': True, 'defense': 'peaceful', 'technology': ['gathering', 'construction'], 'last_election': 0}
             for dy in range(-3, 4):
                 for dx in range(-3, 4):
                     self.terrain[y + dy][x + dx] = 'farmland' if sid == 'a' else 'plains'
@@ -74,7 +106,8 @@ class World:
                 if i == 0:
                     a.equipment = ['staff', 'shield', 'padded_coat']
                 self.agents[aid] = a
-            s.council = [f'{sid}0', f'{sid}{min(1, population-1)}']
+            s.council = list(dict.fromkeys([f'{sid}0', f'{sid}{min(1, population-1)}']))
+            self.governance[sid]['leader'] = s.council[0]
             s.diplomacy = {'b' if sid == 'a' else 'a': 'peace'}
             for n, (kind, dx, dy, qty, regen) in enumerate([
                 ('food', -3, 0, 160 if sid == 'a' else 80, .45),
@@ -88,6 +121,9 @@ class World:
             x, y = self.rng.randrange(2, self.width-2), self.rng.randrange(2, self.height-2)
             if self.passable(x, y):
                 self.wildlife[f'w{i}'] = Wildlife(f'w{i}', x, y, species='boar' if i % 3 == 0 else 'deer')
+        for r in self.resources.values():
+            if r.kind in ('food', 'wood'):
+                self.resource_growth[r.id] = {'age': 0, 'stage': 'mature' if r.quantity > r.capacity * .5 else 'growing'}
         self.event('world_created', 'Two settlements begin independently. Peace is possible.', [])
 
     def passable(self, x, y):
@@ -99,40 +135,75 @@ class World:
         return [(x+dx, y+dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)) if self.passable(x+dx, y+dy)]
 
     def move(self, a, x, y, retreating=False):
-        if a.incapacitated or a.stamina < 1 or not self.passable(x, y):
+        if a.incapacitated or a.stamina < 1 or not all(math.isfinite(v) for v in (x, y)) or not self.passable(x, y):
             return False
-        start, goal = (round(a.x), round(a.y)), (round(x), round(y))
-        if start == goal:
+        goal = (round(x), round(y))
+        # Keep the current waypoint until reached. Rounding a half-step and replanning
+        # otherwise cuts diagonal corners and can strand slow actors on river banks.
+        cached = self._paths.get(a.id)
+        current = (round(a.x), round(a.y))
+        if cached and cached[0] == goal:
+            path = cached[1]
+            while path and hypot(a.x-path[0][0], a.y-path[0][1]) < .001:
+                path.pop(0)
+            if path and not self.passable(*path[0]):
+                cached = None
+        else:
+            cached = None
+        if not cached:
+            start = current
+            if start == goal:
+                if hypot(a.x-x, a.y-y) < .001:
+                    return False
+                path = [goal]
+            else:
+                queue, prev = deque([start]), {start: None}
+                while queue and goal not in prev:
+                    p = queue.popleft()
+                    for n in self.neighbors(*p):
+                        if n not in prev:
+                            prev[n] = p
+                            queue.append(n)
+                if goal not in prev:
+                    return False
+                path, step = [], goal
+                while step != start:
+                    path.append(step)
+                    step = prev[step]
+                path.reverse()
+                # A fractional actor must first finish the previous grid segment.
+                if abs(a.x-start[0]) > .001 or abs(a.y-start[1]) > .001:
+                    path.insert(0, start)
+            self._paths[a.id] = (goal, path)
+        if not path:
             return False
-        queue, prev = deque([start]), {start: None}
-        while queue and goal not in prev:
-            p = queue.popleft()
-            for n in self.neighbors(*p):
-                if n not in prev:
-                    prev[n] = p
-                    queue.append(n)
-        if goal not in prev:
-            return False
-        step = goal
-        while prev[step] != start:
-            step = prev[step]
-        dx, dy = step[0] - a.x, step[1] - a.y
+        step = path[0]
+        dx, dy = step[0]-a.x, step[1]-a.y
         dist = hypot(dx, dy)
         factor = PASSABLE[self.terrain[step[1]][step[0]]]
-        weight = max(.5, 1 - combat.attributes(a, 'weight') * .03)
-        speed = (a.speed + combat.attributes(a, 'speed')) * factor * weight
-        amount = min(dist, speed)
+        weight = max(.5, 1-combat.attributes(a, 'weight')*.03)
+        speed = max(.05, (a.speed+combat.attributes(a, 'speed'))*factor*weight)
+        if self.weather == 'rain' and self.terrain[step[1]][step[0]] != 'road':
+            speed *= .85
+        amount = min(dist, speed, a.stamina/(2 if retreating else 1))
         if dist:
-            a.x += dx / dist * amount
-            a.y += dy / dist * amount
-        a.stamina = max(0, a.stamina - (2 if retreating else 1) * amount)
+            a.x += dx/dist*amount
+            a.y += dy/dist*amount
+        if dist-amount < .001:
+            a.x, a.y = step
+            path.pop(0)
+        a.stamina = max(0, a.stamina-(2 if retreating else 1)*amount)
         a.activity = 'retreat' if retreating else 'move'
-        return True
+        return amount > 0
 
     def event(self, kind, text, actors, **extra):
         e = {'id': self.next_event, 'tick': self.tick, 'kind': kind, 'text': text, 'actors': actors, **extra}
         self.next_event += 1
         self.events.append(e)
+        if len(self.events) > EVENT_LIMIT:
+            del self.events[:-EVENT_LIMIT]
+        if self.event_sink is not None:
+            self.event_sink(e)
         for aid in actors:
             if aid in self.agents:
                 self.agents[aid].memories.append({'tick': self.tick, 'content': text, 'importance': 3 if kind in ('damage', 'conflict_start', 'conflict_end') else 1, 'source': kind, 'confidence': 1})
@@ -167,7 +238,8 @@ class World:
         recent = [c for c in self.conflicts.values() if {c.a, c.b} == {a_id, b_id} and c.ended is not None and self.tick - c.ended < 100]
         if recent:
             return None
-        cid = f'c{len(self.conflicts) + 1}'
+        cid = f'c{self.next_conflict}'
+        self.next_conflict += 1
         self.conflicts[cid] = Conflict(cid, a_id, b_id, self.tick, cause)
         self.event('conflict_start', f'{a.name} and {b.name}: {cause}.', [a_id, b_id], conflict=cid)
         for sid in {a.home, b.home}:
@@ -182,7 +254,7 @@ class World:
                     witness.target = cid
         return self.conflicts[cid]
 
-    def construct(self, agent, kind):
+    def construct(self, agent, kind, x=None, y=None):
         if kind not in BUILDINGS or agent.incapacitated:
             return False
         s = self.settlements[agent.home]
@@ -190,6 +262,27 @@ class World:
             return False
         bid = f'{s.id}_{kind}'
         if bid in self.buildings:
+            if kind not in ('house', 'storage', 'road', 'bridge'):
+                return False
+            bid = f'{bid}_{sum(b.home == s.id and b.kind == kind for b in self.buildings.values())}'
+        if x is None or y is None:
+            candidates = [(s.x+dx, s.y+dy) for dx, dy in ((1,1), (-1,1), (1,-1), (-1,-1), (2,0), (0,2), (-2,0), (0,-2))]
+            occupied = {(b.x, b.y) for b in self.buildings.values()}
+            position = next((p for p in candidates if self.passable(*p) and p not in occupied), None)
+            if position is None:
+                return False
+            x, y = position
+        if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (x, y)):
+            return False
+        x, y = round(x), round(y)
+        if not 0 <= x < self.width or not 0 <= y < self.height or hypot(agent.x-x, agent.y-y) > 4:
+            return False
+        if kind == 'bridge':
+            if self.terrain[y][x] not in ('river', 'lake'):
+                return False
+        elif not self.passable(x, y):
+            return False
+        if any(b.x == x and b.y == y for b in self.buildings.values()):
             return False
         recipe = BUILDINGS[kind]
         if any(s.inventory[k] < v for k, v in recipe.items() if k in s.inventory):
@@ -197,7 +290,7 @@ class World:
         for k, v in recipe.items():
             if k in s.inventory:
                 s.inventory[k] -= v
-        self.buildings[bid] = Building(bid, kind, s.id, s.x + 1, s.y + 1)
+        self.buildings[bid] = Building(bid, kind, s.id, x, y)
         self.event('construction', f'{agent.name} started a {kind}; materials reserved.', [agent.id])
         return True
 
@@ -220,8 +313,9 @@ class World:
         self.transfer(a.inventory, b.inventory, offered, amount)
         self.transfer(b.inventory, a.inventory, wanted, amount)
         self.stats['traded'] += amount * 2
-        self.relate(a, b, .03)
-        self.relate(b, a, .03)
+        at_market = any(building.kind == 'market' and building.complete and combat.distance(a, building) <= 3 and combat.distance(b, building) <= 3 for building in self.buildings.values())
+        self.relate(a, b, .05 if at_market else .03)
+        self.relate(b, a, .05 if at_market else .03)
         self.event('trade', f'{a.name} exchanged {amount} {offered} for {wanted} with {b.name}.', [a.id, b.id])
         return True
 
@@ -234,7 +328,8 @@ class World:
             self.event(a.activity, f'{a.name} consumed {kind}.', [a.id])
             return True
         s = self.settlements[a.home]
-        if combat.distance(a, s) <= 2 and s.inventory[kind] >= 1:
+        sharing = self.governance.get(s.id, {}).get('sharing', True)
+        if combat.distance(a, s) <= 2 and s.inventory[kind] >= 1 and (sharing or a.id in s.council or getattr(a, need) > 75):
             self.transfer(s.inventory, a.inventory, kind, 1)
             return self._consume(a, kind, need)
         return False
@@ -255,30 +350,47 @@ class World:
     def _routine(self, a):
         s = self.settlements[a.home]
         a.defending = False
-        if a.incapacitated or a.hp < a.max_hp * .55 or a.stamina < 25 or a.fatigue > 75:
-            a.activity, a.reason = 'rest', 'Recovering health, stamina or fatigue'
-            self._consume(a, 'food', 'hunger') if a.hunger > 55 else None
-            self._consume(a, 'water', 'thirst') if a.thirst > 55 else None
+        if a.incapacitated:
+            a.activity, a.reason = 'rest', 'Incapacitated; recovering with available supplies'
+            for kind, need in (('food', 'hunger'), ('water', 'thirst')):
+                if getattr(a, need) > 55:
+                    self._consume(a, kind, need)
             combat.recover(a, True)
             return
-        # Optional model intentions enter the same validated local decision layer.
-        if a.goals and a.goals[-1].get('source') == 'ollama' and self.tick - a.goals[-1]['tick'] < 12:
-            intent = a.goals[-1]['intention']
-            if intent == 'rest' and a.hunger < 45 and a.thirst < 45:
-                a.activity, a.reason = 'rest', 'Accepted a safe high-level model intention'
-                combat.recover(a, True)
-                return
-        # Survival has higher utility than work or social goals.
         for kind, need in (('water', 'thirst'), ('food', 'hunger')):
             if getattr(a, need) > 45:
                 a.reason = f'{need.title()} has highest urgency'
                 if self._consume(a, kind, need):
+                    return
+                if a.stamina < 5:
+                    a.activity = 'rest'
+                    combat.recover(a, True)
+                    return
+                # Settlement stocks are real shared property and preferred when nearby.
+                if s.inventory[kind] >= 1 and combat.distance(a, s) < 6:
+                    self.move(a, s.x, s.y)
                     return
                 nearby = min((r for r in self.resources.values() if r.kind == kind and r.quantity > 0), key=lambda r: combat.distance(a, r), default=None)
                 if nearby:
                     if not self.gather(a, nearby):
                         self.move(a, nearby.x, nearby.y)
                     return
+        if a.hp < a.max_hp*.55 or a.stamina < 25 or a.fatigue > 75:
+            shelters = [b for b in self.buildings.values() if b.home == a.home and b.complete and BUILDINGS[b.kind].get('shelter')]
+            shelter = min(shelters, key=lambda b: combat.distance(a, b), default=None)
+            if a.fatigue > 75 and shelter and combat.distance(a, shelter) > 2 and a.stamina > 5 and a.hp > 20:
+                a.reason = 'Seeking shelter to sleep safely'
+                self.move(a, shelter.x, shelter.y)
+                return
+            a.activity, a.reason = 'sleep' if a.fatigue > 60 and shelter and combat.distance(a, shelter) <= 2 else 'rest', 'Recovering health, stamina or fatigue'
+            combat.recover(a, True)
+            if a.activity == 'sleep':
+                a.fatigue = max(0, a.fatigue-3)
+                a.shelter = max(0, a.shelter-8)
+            return
+        from .planning import execute_plan
+        if execute_plan(self, a):
+            return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
         if injured:
             assisted = False
@@ -292,6 +404,21 @@ class World:
                 self.relate(injured, a, .05)
                 self.event('help', f'{a.name} helped {injured.name} recover.', [a.id, injured.id])
                 return
+        if getattr(a, 'social', 0) > 60:
+            hall = next((b for b in self.buildings.values() if b.home == a.home and b.kind == 'hall' and b.complete), None)
+            if hall:
+                a.reason = 'Visiting the public hall to meet a social need'
+                if combat.distance(a, hall) > 2:
+                    self.move(a, hall.x, hall.y)
+                    return
+                companions = [b for b in self.agents.values() if b.id != a.id and not b.incapacitated and combat.distance(a, b) <= 3]
+                if companions:
+                    a.social = max(0, a.social-10)
+                    for companion in companions:
+                        companion.social = max(0, getattr(companion, 'social', 0)-3)
+                        self.relate(a, companion, .005)
+                    a.activity = 'socialize'
+                    return
         if a.occupation == 'guard':
             a.reason = 'Patrolling and protecting nearby inhabitants'
             if a.target in self.conflicts and self.conflicts[a.target].state == 'active':
@@ -342,6 +469,16 @@ class World:
                     if self.construct(a, kind):
                         break
             return
+        if self.tick % 200 == 0 and combat.distance(a, s) <= 2 and a.occupation not in ('guard', 'builder'):
+            for other in self.settlements.values():
+                if other.id == a.home:
+                    continue
+                offered = max(('food', 'wood', 'metal', 'stone'), key=lambda k: s.inventory[k]-other.inventory[k])
+                wanted = max(('food', 'wood', 'metal', 'stone'), key=lambda k: other.inventory[k]-s.inventory[k])
+                if offered != wanted and s.inventory[offered]-other.inventory[offered] > 30 and other.inventory[wanted]-s.inventory[wanted] > 30:
+                    if self.request_shipment(a, other.id, offered, wanted, 4):
+                        a.reason, a.activity = 'Taking a voluntary trade opportunity from relative scarcity', 'transport'
+                        return
         if self.tick % 17 == 0 and a.personality['sociability'] > .2:
             others = [b for b in self.agents.values() if b.id != a.id and combat.distance(a, b) < 3 and not b.incapacitated]
             if others:
@@ -349,6 +486,8 @@ class World:
                 self.relate(a, b, .02)
                 self.relate(b, a, .02)
                 a.activity, a.reason = 'talk', 'Building familiarity with a nearby inhabitant (rule-based interaction)'
+                a.social = max(0, getattr(a, 'social', 0)-15)
+                b.social = max(0, getattr(b, 'social', 0)-10)
                 self.event('social', f'{a.name} and {b.name} shared local observations.', [a.id, b.id])
                 if not self.trade(a, b):
                     self.trade(a, b, 'stone', 'water')
@@ -370,8 +509,22 @@ class World:
 
     def _ecology(self):
         factor = .25 if self.season == 'winter' else 1
+        if self.weather == 'drought':
+            factor *= .55
+        elif self.weather == 'rain':
+            factor *= 1.2
         for r in self.resources.values():
-            amount = min(r.capacity-r.quantity, r.regeneration*factor)
+            growth = self.resource_growth.get(r.id)
+            growth_factor = 1
+            if growth is not None:
+                growth['age'] = (growth['age']+1) % (240 if r.kind == 'food' else 10000)
+                if r.kind == 'food':
+                    age = growth['age']
+                    growth['stage'] = 'seedling' if age < 40 else ('growing' if age < 90 else ('mature' if age < 210 else 'dormant'))
+                    growth_factor = .2 if age < 90 else (1 if age < 210 else 0)
+                else:
+                    growth['stage'] = 'seedling' if r.quantity < r.capacity*.1 else ('growing' if r.quantity < r.capacity*.7 else 'mature')
+            amount = max(0, min(r.capacity-r.quantity, r.regeneration*factor*growth_factor))
             r.quantity += amount
             self.stats['produced'] += amount
         if self.tick % 10 == 0:
@@ -379,16 +532,25 @@ class World:
                 if not b.complete:
                     continue
                 s = self.settlements[b.home]
+                if b.kind in ('road', 'bridge'):
+                    self.terrain[round(b.y)][round(b.x)] = 'road'
                 if b.kind == 'farm':
-                    amount = min(5*factor, max(0, self.capacity(s)-sum(s.inventory.values())))
+                    amount = min(5*factor*max(.1, b.condition/100), max(0, self.capacity(s)-sum(s.inventory.values())))
                     s.inventory['food'] += amount
                     self.stats['produced'] += amount
-                if b.kind == 'workshop' and s.inventory['wood'] >= 2 and s.inventory['metal'] >= 1:
+                if b.kind == 'well':
+                    source = min((r for r in self.resources.values() if r.kind == 'water' and combat.distance(b, r) <= 10), key=lambda r: combat.distance(b, r), default=None)
+                    if source:
+                        amount = min(source.quantity, 3, max(0, self.capacity(s)-sum(s.inventory.values())))
+                        source.quantity -= amount
+                        s.inventory['water'] += amount
+                        self.stats['gathered'] += amount
+                if b.kind == 'workshop' and s.inventory['wood'] >= 2 and s.inventory['metal'] >= 1 and s.inventory['tools'] < 30 and sum(s.inventory.values()) < self.capacity(s):
                     s.inventory['wood'] -= 2
                     s.inventory['metal'] -= 1
                     s.inventory['tools'] += 1
                     self.event('craft', f'{s.name} crafted a tool.', [])
-        for animal in self.wildlife.values():
+        for animal in list(self.wildlife.values()):
             if animal.hp <= 0:
                 animal.activity = 'incapacitated'
                 continue
@@ -417,15 +579,193 @@ class World:
                     if options:
                         animal.x, animal.y = self.rng.choice(options)
 
+    def _institutions(self):
+        # Council decisions are votes with material effects. No policy changes without
+        # a proposal and a majority, and hostile defense never creates a conflict.
+        for proposal in self.proposals.values():
+            if proposal['state'] != 'open':
+                continue
+            s = self.settlements[proposal['settlement']]
+            for aid in s.council:
+                if aid in proposal['votes']:
+                    continue
+                voter = self.agents[aid]
+                if voter.incapacitated:
+                    continue
+                policy = proposal['policy']
+                agree = voter.personality['aggression'] < .7 if policy in ('share_surplus', 'open_trade') else (s.inventory['food'] < 40 if policy == 'rationing' else voter.personality['courage'] > .4)
+                self.vote(voter, proposal['id'], agree)
+            if len(proposal['votes']) >= len(s.council) or self.tick-proposal['tick'] >= 30:
+                passed = sum(proposal['votes'].values()) > len(s.council)/2
+                proposal['state'] = 'passed' if passed else 'rejected'
+                if passed:
+                    s.policy = proposal['policy']
+                    self.governance[s.id]['sharing'] = s.policy in ('share_surplus', 'open_trade')
+                    self.governance[s.id]['defense'] = 'guarded' if s.policy == 'defense' else 'peaceful'
+                    s.stability = min(100, s.stability+2)
+                self.event('council_decision', f'{s.name} council {proposal["state"]} {proposal["policy"]}.', list(proposal['votes']), proposal=proposal['id'])
+        for sid, government in self.governance.items():
+            if government['defense'] == 'guarded':
+                disputes = [c for c in self.conflicts.values() if c.state == 'active' and sid in (self.agents[c.a].home, self.agents[c.b].home)]
+                for guard in self.agents.values():
+                    if guard.home == sid and guard.occupation == 'guard' and disputes:
+                        guard.target = min(disputes, key=lambda c: combat.distance(guard, self.agents[c.a])).id
+        for shipment in self.shipments.values():
+            if shipment['state'] != 'in_transit':
+                continue
+            courier = self.agents.get(shipment['courier'])
+            destination = self.settlements[shipment['destination']]
+            origin = self.settlements[shipment['origin']]
+            if courier is None or courier.incapacitated:
+                shipment['state'] = 'waiting'
+                continue
+            if combat.distance(courier, destination) <= 2:
+                offered, wanted, quantity = shipment['offered'], shipment['wanted'], shipment['amount']
+                cargo = shipment['cargo']
+                if destination.inventory[wanted] >= quantity and cargo[offered] >= quantity:
+                    self.transfer(cargo, destination.inventory, offered, quantity)
+                    self.transfer(destination.inventory, cargo, wanted, quantity)
+                    shipment['state'] = 'returning'
+                    self.stats['traded'] += quantity*2
+                    self.event('settlement_trade', f'{courier.name} exchanged {quantity:g} {offered} for {wanted} at {destination.name}.', [courier.id])
+                else:
+                    shipment['state'] = 'returning'
+                    shipment['failed'] = True
+                    self.event('shipment_failed', 'A trade could not complete; the courier returns the original cargo.', [courier.id])
+        # Reinstate interrupted couriers after recovery; goods never exist outside inventory.
+        for shipment in self.shipments.values():
+            courier = self.agents.get(shipment['courier'])
+            if courier is not None and shipment['state'] == 'waiting' and not courier.incapacitated:
+                shipment['state'] = 'in_transit'
+            if courier is not None and shipment['state'] == 'returning':
+                origin = self.settlements[shipment['origin']]
+                if combat.distance(courier, origin) <= 2:
+                    for kind, amount in list(shipment['cargo'].items()):
+                        if amount > 0:
+                            self.transfer(shipment['cargo'], origin.inventory, kind, amount)
+                    shipment['state'] = 'cancelled' if shipment.get('failed') else 'delivered'
+                    self.event('shipment_delivered', f'{courier.name} delivered traded goods to {origin.name}.', [courier.id])
+        if self.tick % 100 == 0:
+            for b in self.buildings.values():
+                if b.complete:
+                    b.condition = max(10, b.condition-.5)
+            for c_id, c in list(self.conflicts.items()):
+                if c.state != 'active' and c.ended is not None and self.tick-c.ended > 500:
+                    del self.conflicts[c_id]
+            self.proposals = {k: v for k, v in self.proposals.items() if v['state'] == 'open' or self.tick-v['tick'] < 500}
+            self.shipments = {k: v for k, v in self.shipments.items() if v['state'] in ('in_transit', 'waiting', 'returning') or self.tick-v['tick'] < 500}
+        if self.tick % 600 == 0:
+            # Lightweight ecological population dynamics with a hard carrying capacity.
+            healthy = [a for a in self.wildlife.values() if a.hp > 0 and a.stamina > 40]
+            if len(healthy) >= 2 and len(self.wildlife) < 16 and sum(r.quantity for r in self.resources.values() if r.kind == 'food') > 30:
+                parent = self.rng.choice(healthy)
+                options = self.neighbors(parent.x, parent.y)
+                if options:
+                    x, y = self.rng.choice(options)
+                    wid = f'wild_{self.tick}'
+                    self.wildlife[wid] = Wildlife(wid, x, y, species=parent.species)
+                    self.event('wildlife_birth', 'A new wild animal was observed.', [])
+
+    def propose_policy(self, agent, policy):
+        policy = {'ration': 'rationing', 'guarded': 'defense'}.get(policy, policy)
+        if policy not in ('share_surplus', 'rationing', 'open_trade', 'defense') or agent.incapacitated:
+            return None
+        if any(p['state'] == 'open' and p['settlement'] == agent.home for p in self.proposals.values()):
+            return None
+        pid = f'proposal_{self.next_event}'
+        self.proposals[pid] = {'id': pid, 'settlement': agent.home, 'proposer': agent.id, 'policy': policy, 'votes': {}, 'state': 'open', 'tick': self.tick}
+        self.event('proposal', f'{agent.name} proposed {policy}.', [agent.id], proposal=pid)
+        return pid
+
+    def vote(self, agent, proposal_id, approve):
+        proposal = self.proposals.get(proposal_id)
+        if not proposal or proposal['state'] != 'open' or agent.id not in self.settlements[proposal['settlement']].council or type(approve) is not bool:
+            return False
+        proposal['votes'][agent.id] = approve
+        return True
+
+    def request_shipment(self, agent, destination, offered='food', wanted='metal', amount=4):
+        if destination not in self.settlements or destination == agent.home or not math.isfinite(amount) or amount <= 0 or amount > 20 or offered == wanted:
+            return None
+        origin = self.settlements[agent.home]
+        target = self.settlements[destination]
+        if combat.distance(agent, origin) > 2 or agent.incapacitated or self.active(agent.id):
+            return None
+        if any(s['courier'] == agent.id and s['state'] in ('in_transit', 'returning', 'waiting') for s in self.shipments.values()):
+            return None
+        if offered not in origin.inventory or wanted not in target.inventory or origin.inventory[offered] < amount or target.inventory[wanted] < amount:
+            return None
+        # Demand-sensitive decision: nobody gives away a scarcer good for a common one.
+        if target.inventory[wanted] < target.inventory.get(offered, 0)*.4:
+            return None
+        cargo = {kind: 0 for kind in origin.inventory}
+        if not self.transfer(origin.inventory, cargo, offered, amount):
+            return None
+        sid = f'shipment_{self.next_shipment}'
+        self.next_shipment += 1
+        self.shipments[sid] = {'id': sid, 'courier': agent.id, 'origin': origin.id, 'destination': destination, 'offered': offered, 'wanted': wanted, 'amount': amount, 'cargo': cargo, 'owner': origin.id, 'state': 'in_transit', 'tick': self.tick}
+        self.event('shipment_started', f'{agent.name} carries {amount:g} {offered} to {target.name}.', [agent.id])
+        return sid
+
+    def craft(self, agent, item):
+        recipe = RECIPES.get(item)
+        workshop = next((b for b in self.buildings.values() if b.home == agent.home and b.kind == 'workshop' and b.complete and combat.distance(agent, b) <= 2), None)
+        if recipe is None or workshop is None or agent.incapacitated or agent.stamina < 4:
+            return False
+        if any(agent.inventory.get(k, 0) < v for k, v in recipe['inputs'].items()):
+            return False
+        if recipe.get('equipment') and item in agent.equipment:
+            return False
+        for kind, amount in recipe['inputs'].items():
+            agent.inventory[kind] -= amount
+        if recipe.get('equipment'):
+            agent.equipment.append(item)
+        else:
+            agent.inventory[item] += recipe['output']
+        agent.skills['craft'] = min(5, agent.skills.get('craft', 0)+.05)
+        agent.stamina -= 4
+        self.event('craft', f'{agent.name} crafted {item}.', [agent.id])
+        return True
+
+    def teach(self, teacher, learner, topic):
+        if teacher.id == learner.id or combat.distance(teacher, learner) > 3 or teacher.incapacitated or learner.incapacitated:
+            return False
+        if topic not in teacher.skills:
+            known = next((k for k in teacher.knowledge if k.get('claim') == topic), None)
+            if known is None or teacher.stamina < 3:
+                return False
+            from .memory import learn
+            learn(learner, self.tick, topic, teacher.id, min(.8, known.get('confidence', .5)))
+            teacher.stamina -= 3
+            self.relate(learner, teacher, .02)
+            self.event('teaching', f'{teacher.name} shared knowledge with {learner.name}.', [teacher.id, learner.id])
+            return True
+        current = learner.skills.get(topic, 0)
+        if teacher.skills[topic] <= current or teacher.stamina < 3:
+            return False
+        learner.skills[topic] = min(teacher.skills[topic], current+.1)
+        teacher.stamina -= 3
+        self.relate(learner, teacher, .02)
+        self.event('teaching', f'{teacher.name} taught {learner.name} a method of {topic}.', [teacher.id, learner.id])
+        return True
+
     def step(self, count=1):
+        if type(count) is not int or not 0 <= count <= 100000:
+            raise ValueError('Tick count must be an integer in 0..100000')
         for _ in range(count):
             self.tick += 1
             self._ecology()
             combat.update(self)
+            self._institutions()
             for a in self.agents.values():
                 a.hunger = min(100, a.hunger + .22)
                 a.thirst = min(100, a.thirst + .3)
-                a.fatigue = min(100, a.fatigue + .16)
+                a.fatigue = min(100, a.fatigue + (.16 if self.daylight else .25))
+                sheltered = any(b.complete and b.condition > 0 and BUILDINGS[b.kind].get('shelter') and combat.distance(a, b) <= 2 for b in self.buildings.values())
+                a.shelter = max(0, min(100, getattr(a, 'shelter', 0)+(-.6 if sheltered else .08)))
+                nearby_conflict = any(c.state == 'active' and combat.distance(a, self.agents[c.a]) < 5 for c in self.conflicts.values())
+                a.safety = max(0, min(100, getattr(a, 'safety', 0)+(2 if nearby_conflict else -.3)))
+                a.social = min(100, getattr(a, 'social', 0)+.08)
                 if a.hunger >= 95 or a.thirst >= 95:
                     a.hp = max(0, a.hp - .4)
                     a.incapacitated = a.hp <= 0
@@ -433,7 +773,13 @@ class World:
                     if a.player:
                         combat.recover(a, a.activity == 'rest' or a.incapacitated)
                     else:
-                        self._routine(a)
+                        shipment = next((s for s in self.shipments.values() if s['courier'] == a.id and s['state'] in ('in_transit', 'returning')), None)
+                        if shipment and a.hunger < 45 and a.thirst < 45 and a.stamina >= 25 and a.fatigue < 75:
+                            destination = self.settlements[shipment['destination'] if shipment['state'] == 'in_transit' else shipment['origin']]
+                            a.reason = 'Transporting real goods under a settlement trade agreement'
+                            self.move(a, destination.x, destination.y)
+                        else:
+                            self._routine(a)
                         combat.recover(a, False)
                 # Only genuinely hostile, scarce-resource encounters can escalate.
                 if not a.player and not a.incapacitated and self.tick % 23 == 0 and a.personality['aggression'] > .7:
@@ -447,7 +793,8 @@ class World:
 
     def snapshot(self, full=False):
         result = {'version': 1, 'seed': self.seed, 'width': self.width, 'height': self.height, 'tick': self.tick, 'season': self.season,
-                  'terrain': self.terrain, 'stats': self.stats, 'next_event': self.next_event}
+                  'terrain': self.terrain, 'stats': self.stats, 'next_event': self.next_event, 'hour': self.hour, 'weather': self.weather, 'daylight': self.daylight,
+                  'conversations': self.conversations, 'agreements': self.agreements, 'governance': self.governance, 'proposals': self.proposals, 'shipments': self.shipments, 'resource_growth': self.resource_growth, 'next_conflict': self.next_conflict, 'next_shipment': self.next_shipment, 'paths': {k: [list(v[0]), [list(p) for p in v[1]]] for k, v in self._paths.items()}}
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
         result['events'] = self.events if full else self.events[-80:]
@@ -466,6 +813,13 @@ class World:
             setattr(w, name, {k: model(**v) for k, v in data[name].items()})
         def tuples(v):
             return tuple(tuples(x) for x in v) if isinstance(v, list) else v
+        for name in ('conversations', 'agreements', 'proposals', 'shipments', 'resource_growth'):
+            setattr(w, name, data.get(name, {}))
+        w.governance = data.get('governance', {sid: {'leader': s.council[0] if s.council else None, 'tax': .1, 'sharing': True, 'defense': 'peaceful', 'technology': ['gathering', 'construction'], 'last_election': 0} for sid, s in w.settlements.items()})
+        w.next_conflict = data.get('next_conflict', 1+max((int(k[1:]) for k in w.conflicts if k[1:].isdigit()), default=0))
+        w.next_shipment = data.get('next_shipment', 1)
+        w.event_sink = None
+        w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
         return w
