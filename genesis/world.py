@@ -207,12 +207,9 @@ class World:
             self.event_sink(e)
         for aid in actors:
             if aid in self.agents:
-                self.agents[aid].memories.append({'tick': self.tick, 'content': text, 'importance': 3 if kind in ('damage', 'conflict_start', 'conflict_end') else 1, 'source': kind, 'confidence': 1})
-                # Recent details plus retained significant experiences; full history is in SQLite.
-                memories = self.agents[aid].memories
-                if len(memories) > 120:
-                    index = next((i for i, m in enumerate(memories) if m['importance'] < 3), 0)
-                    memories.pop(index)
+                from .memory import remember
+                remember(self.agents[aid], self.tick, text, kind,
+                         3 if kind in ('damage', 'conflict_start', 'conflict_end', 'dialogue') else 1)
         return e
 
     def memories_for(self, aid, query='', limit=8):

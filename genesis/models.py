@@ -33,7 +33,26 @@ class Agent:
     defending: bool = False
     player: bool = False
     combat_choice: str = 'avoid'
+    combat_intent: dict = field(default_factory=dict)
     patrol_index: int = 0
+    shelter: float = 0
+    safety: float = 0
+    social: float = 15
+    plan: list = field(default_factory=list)
+    plan_index: int = 0
+    plan_status: str = 'idle'
+    plan_error: str = ''
+    cognition_revision: int = 0
+    last_reasoned: int = -1000
+    next_reason_tick: int = 0
+    reasoning_count: int = 0
+    beliefs: list = field(default_factory=list)
+    semantic_memory: list = field(default_factory=list)
+    long_term_goals: list = field(default_factory=list)
+    commitments: list = field(default_factory=list)
+    property: list = field(default_factory=list)
+    reflection: str = ''
+    observations: dict = field(default_factory=dict)
 
 
 @dataclass

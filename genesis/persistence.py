@@ -1,4 +1,4 @@
-"""Atomic SQLite snapshots and queryable append-only event history."""
+"""Atomic versioned snapshots with an incremental, queryable SQLite event archive."""
 import json
 import sqlite3
 from pathlib import Path
@@ -16,16 +16,28 @@ CREATE TABLE IF NOT EXISTS history (
 '''
 
 
-def save(world, path, slot='world'):
+def _rows(events, slot):
+    return [(slot, e['id'], e['tick'], e['kind'], json.dumps(e, allow_nan=False)) for e in events]
+
+
+def append_history(events, path, slot='world'):
+    if not events:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path, timeout=10) as db:
+        db.executescript(SCHEMA)
+        db.executemany('INSERT OR REPLACE INTO history VALUES(?,?,?,?,?)', _rows(events, slot))
+
+
+def save(world, path, slot='world', pending=()):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     state = json.dumps(world.snapshot(True), allow_nan=False)
     with sqlite3.connect(path, timeout=10) as db:
         db.executescript(SCHEMA)
-        # Transactions preserve the preceding valid snapshot on interruption.
         db.execute('INSERT OR REPLACE INTO saves(slot,version,tick,state) VALUES(?,?,?,?)', (slot, 1, world.tick, state))
-        # Rewinding a slot replaces its future history consistently.
-        db.execute('DELETE FROM history WHERE slot=?', (slot,))
-        db.executemany('INSERT INTO history VALUES(?,?,?,?,?)', [(slot, e['id'], e['tick'], e['kind'], json.dumps(e)) for e in world.events])
+        # Loading an older snapshot discards only its abandoned future, not prior archive.
+        db.execute('DELETE FROM history WHERE slot=? AND event_id>=?', (slot, world.next_event))
+        db.executemany('INSERT OR REPLACE INTO history VALUES(?,?,?,?,?)', _rows([*world.events, *pending], slot))
 
 
 def load(path, slot='world'):
@@ -37,5 +49,5 @@ def load(path, slot='world'):
         if not row:
             raise ValueError('Save slot does not exist')
         return World.from_snapshot(json.loads(row[0]))
-    except (sqlite3.Error, json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
+    except (sqlite3.Error, json.JSONDecodeError, KeyError, TypeError, IndexError, AttributeError) as exc:
         raise ValueError(f'Cannot load save: {exc}') from exc

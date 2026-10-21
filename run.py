@@ -8,15 +8,17 @@ import sys
 import time
 import urllib.request
 import os
+import json
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--headless', action='store_true')
     p.add_argument('--ollama', action='store_true')
+    p.add_argument('--port', type=int, default=8765)
     args, extra = p.parse_known_args()
     root = Path(__file__).resolve().parent
-    backend = [sys.executable, '-m', 'genesis.server'] + (['--ollama'] if args.ollama else []) + extra
+    backend = [sys.executable, '-m', 'genesis.server'] + (['--ollama'] if args.ollama else []) + ['--port', str(args.port)] + extra
     if args.headless:
         os.chdir(root)
         os.execv(sys.executable, backend)
@@ -34,13 +36,14 @@ def main():
             if process.poll() is not None:
                 raise RuntimeError('Backend failed to start; inspect the error above')
             try:
-                with urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=.5):
-                    break
+                with urllib.request.urlopen(f'http://127.0.0.1:{args.port}/health', timeout=.5) as response:
+                    if json.load(response).get('pid') == process.pid:
+                        break
             except OSError:
                 time.sleep(.1)
         else:
             raise RuntimeError('Backend did not become ready')
-        subprocess.run([godot, '--path', str(root/'godot')], check=True)
+        subprocess.run([godot, '--path', str(root/'godot'), '--', f'--api=http://127.0.0.1:{args.port}'], check=True)
     finally:
         if process.poll() is None:
             # SIGINT gives Python an opportunity to atomically save before shutdown.
@@ -49,7 +52,7 @@ def main():
                 process.send_signal(signal.SIGINT)
             else:
                 try:
-                    req = urllib.request.Request('http://127.0.0.1:8765/command', b'{"action":"save"}', {'Content-Type': 'application/json'})
+                    req = urllib.request.Request(f'http://127.0.0.1:{args.port}/command', b'{"action":"save"}', {'Content-Type': 'application/json'})
                     urllib.request.urlopen(req, timeout=5).close()
                 except OSError:
                     pass
