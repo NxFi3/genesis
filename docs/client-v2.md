@@ -28,3 +28,14 @@ godot --headless --path godot -- --smoke --api=http://127.0.0.1:8767
 Result: exit 0, `GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes and cognition settings`.
 
 No desktop display or Xvfb is installed in this execution environment. Actual pixel rendering, mouse/keyboard usability in a graphical window, and desktop Windows execution are **not verified**. The scene smoke is not represented as graphical acceptance or real-model integration.
+
+## Additional action controls
+
+`More actions…` opens four compact tabs without obstructing the normal map controls permanently:
+
+- **Trade:** propose an offer of owned goods to the selected nearby inhabitant. Pending incoming offers addressed to the player appear in a live selector with Accept/Reject. Acceptance still requires stock and proximity; an offer is never counted as an immediate resource transfer.
+- **Workshop:** select tools, staff, shield, or padded coat; craft through the authoritative engine. Retrieve/deposit any supported store resource, teach a skill or an already-known claim to the selected inhabitant, and repair a selected damaged home building using wood.
+- **Council:** submit a resource-sharing, rationing, open-trade, or defense policy proposal; propose the toolbar-selected building as a group project. Open home-settlement proposals are inspectable and voting controls call the engine, which enforces council membership.
+- **Build:** contribute to a selected construction project or repair it. Explicit tile X/Y placement is supported for valid buildings including roads and bridges. Pick Tile hides the popup so a map click can select a position under the current camera pan/zoom; Escape cancels. The engine validates the location, proximity, and materials.
+
+Player action panels are disabled in Observer mode. Backend rejection messages are shown in the shared status line instead of claiming a failed action completed. The smoke test additionally opens this popup and verifies all four equipment/tool recipe choices exist. The actual command mechanics are covered by backend tests; no desktop usability or graphical acceptance is claimed from this headless scene check.

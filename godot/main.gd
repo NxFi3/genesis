@@ -37,6 +37,12 @@ var smoke_frames := 0
 var panning := false
 var settings_open := false
 var player_buttons: Array[Button] = []
+var actions_popup: PopupPanel
+var actions_open := false
+var action_fields: Dictionary = {}
+var agreement_ids: Array[String] = []
+var proposal_ids: Array[String] = []
+var placing_site := false
 
 func _ready() -> void:
     for argument in OS.get_cmdline_user_args():
@@ -138,12 +144,13 @@ func _make_ui() -> void:
     building_choice = OptionButton.new()
     building_choice.position = Vector2(24, 681)
     building_choice.size = Vector2(145, 30)
-    for kind in ["house", "farm", "storage", "workshop", "market", "watchtower", "road", "bridge", "public_hall"]:
+    for kind in ["house", "farm", "storage", "workshop", "market", "watchtower", "road", "bridge", "hall", "well"]:
         building_choice.add_item(kind)
     add_child(building_choice)
     button_at("Plan building", Vector2(179, 681), func(): player_command({"action": "build", "kind": building_choice.get_item_text(building_choice.selected)}), 120, true)
     button_at("Build work", Vector2(309, 681), func(): player_command({"action": "work"}), 110, true)
-    label_at("Gold: player   Green / Blue: settlements   Amber: dispute", Vector2(440, 689), 12)
+    button_at("More actions…", Vector2(440, 681), _open_actions, 135, true)
+    label_at("Gold: player • Amber: dispute", Vector2(590, 689), 12)
     history_tabs = TabContainer.new()
     history_tabs.position = Vector2(24, 724)
     history_tabs.size = Vector2(864, 132)
@@ -163,6 +170,7 @@ func _make_ui() -> void:
     status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     status_label.size = Vector2(1240, 35)
     _make_settings()
+    _make_actions()
 
 func _toggle_mode() -> void:
     player_mode = not player_mode
@@ -206,7 +214,7 @@ func _process(delta: float) -> void:
             busy = false
             status_label.text = "Could not send command: %s" % error_string(error)
     var focused := get_viewport().gui_get_focus_owner()
-    if not settings_open and not (focused is LineEdit or focused is TextEdit):
+    if not settings_open and not actions_open and not placing_site and not (focused is LineEdit or focused is TextEdit):
         var direction := Vector2.ZERO
         if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP): direction.y -= 1
         if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN): direction.y += 1
@@ -234,11 +242,15 @@ func _process(delta: float) -> void:
             assert(settings.visible)
             assert(not setting_fields.model.text.is_empty())
             settings.hide()
+            _open_actions()
+            assert(actions_popup.visible)
+            assert(action_fields.recipe.item_count == 4)
+            actions_popup.hide()
             _toggle_mode()
             assert(not player_mode)
             _toggle_mode()
             assert(player_mode)
-            print("GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes and cognition settings")
+            print("GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes, cognition settings and action panels")
             get_tree().quit(0)
         elif smoke_frames > 1200:
             push_error("GENESIS smoke timed out waiting for backend")
@@ -255,7 +267,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     view.state = state
     view.selected = selected
     var environment: Dictionary = state.get("environment", {})
-    top_stats.text = "Tick %d • %s %s • %d inhabitants • %d buildings • %.2f ms/tick • %s" % [state.tick, state.season, environment.get("weather", ""), state.agents.size()-1, state.buildings.size(), state.get("tick_ms", 0), "PAUSED" if state.get("paused", false) else "RUNNING"]
+    top_stats.text = "Tick %d • %s %s • %d inhabitants • %d buildings • %.2f ms/tick • %s" % [state.tick, state.season, state.get("weather", ""), state.agents.size()-1, state.buildings.size(), state.get("tick_ms", 0), "PAUSED" if state.get("paused", false) else "RUNNING"]
     var cognition: Dictionary = state.get("cognition", {})
     var metrics: Dictionary = cognition.get("metrics", {})
     var config: Dictionary = cognition.get("config", {})
@@ -278,6 +290,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     else:
         selected = "player"
     _inspect()
+    if actions_open: _refresh_action_lists()
 
 func _received_command(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
     busy = false
@@ -296,7 +309,7 @@ func _inspect() -> void:
         home = a.home
         var text := "%s / %s\n%s • age %d • home %s\n\nHP %.0f / %.0f   Stamina %.0f\nHunger %.0f   Thirst %.0f   Fatigue %.0f\nShelter: %s   Safety: %s   Social: %s\nSpeed %.2f   Defense %.0f\nEquipment: %s\n\nActivity: %s\nWhy: %s\n\nSkills: %s\nPersonality: %s\n\nInventory: %s\nRelationships: %s" % [a.name, a.id, a.occupation, a.age, a.home, a.hp, a.max_hp, a.stamina, a.hunger, a.thirst, a.fatigue, a.get("shelter", "n/a"), a.get("safety", "n/a"), a.get("social", "n/a"), a.speed, a.defense, ", ".join(a.equipment), a.activity, a.reason, JSON.stringify(a.skills), JSON.stringify(a.personality), JSON.stringify(a.inventory), JSON.stringify(a.relationships)]
         details.text = text
-        memory_details.text = "GOALS\n%s\n\nPLAN\n%s\n\nPRIVATE KNOWLEDGE / BELIEFS\n%s\n\nREFLECTIONS\n%s\n\nRECENT MEMORIES\n" % [JSON.stringify(a.goals, "  "), JSON.stringify(a.get("plan", a.get("plans", [])), "  "), JSON.stringify(a.knowledge, "  "), JSON.stringify(a.get("reflections", []), "  ")]
+        memory_details.text = "GOALS\n%s\n\nPLAN\n%s\n\nPRIVATE KNOWLEDGE / BELIEFS\n%s\n\nREFLECTIONS\n%s\n\nRECENT MEMORIES\n" % [JSON.stringify(a.goals, "  "), JSON.stringify(a.get("plan", a.get("plans", [])), "  "), JSON.stringify(a.knowledge, "  "), str(a.get("reflection", ""))]
         for m in a.memories.slice(maxi(0, a.memories.size()-8)):
             memory_details.text += "[%d] %s (source: %s, confidence: %s)\n" % [m.get("tick", 0), m.get("content", ""), m.get("source", "unknown"), m.get("confidence", 1)]
     else:
@@ -315,6 +328,7 @@ func _inspect() -> void:
     for conversation in conversations:
         if selected not in conversation.get("participants", []) and selected != "player": continue
         lines.append("— %s / %s —" % [conversation.get("id", "conversation"), conversation.get("state", "")])
+        if conversation.has("error"): lines.append("Status: " + str(conversation.error))
         for turn in conversation.get("turns", []):
             var speaker: String = str(turn.get("speaker", "?"))
             var name: String = str(state.agents.get(speaker, {}).get("name", speaker))
@@ -411,6 +425,10 @@ func _new_world_dialog() -> void:
     dialog.popup_centered()
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and placing_site:
+        placing_site = false
+        status_label.text = "Building placement cancelled."
+        return
     if event is InputEventMouseButton:
         if event.button_index == MOUSE_BUTTON_MIDDLE:
             panning = event.pressed and MAP_RECT.has_point(event.position)
@@ -419,6 +437,13 @@ func _unhandled_input(event: InputEvent) -> void:
                 view.zoom_at(1.15, event.position - MAP_RECT.position)
             elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
                 view.zoom_at(1/1.15, event.position - MAP_RECT.position)
+            elif event.button_index == MOUSE_BUTTON_LEFT and placing_site:
+                var world_position: Vector2 = ((event.position - MAP_RECT.position) - view.camera_offset) / view.zoom / WorldView.TILE
+                action_fields.site_x.value = floorf(world_position.x)
+                action_fields.site_y.value = floorf(world_position.y)
+                action_fields.use_site.button_pressed = true
+                placing_site = false
+                _open_actions()
             elif event.button_index == MOUSE_BUTTON_LEFT and not state.is_empty():
                 var closest := 14.0
                 for category in ["agents", "buildings", "settlements", "resources", "wildlife"]:
@@ -431,3 +456,168 @@ func _unhandled_input(event: InputEvent) -> void:
     elif event is InputEventMouseMotion and panning:
         view.follow_agent = false
         view.camera_offset += event.relative
+
+func action_row(box: VBoxContainer, caption: String) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    var label := Label.new()
+    label.text = caption
+    label.custom_minimum_size.x = 160
+    row.add_child(label)
+    box.add_child(row)
+    return row
+
+func action_options(box: VBoxContainer, caption: String, key: String, values: Array) -> void:
+    var row := action_row(box, caption)
+    var options := OptionButton.new()
+    options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for value in values: options.add_item(str(value))
+    row.add_child(options)
+    action_fields[key] = options
+
+func action_amount(box: VBoxContainer, caption: String, key: String, minimum := 1.0, maximum := 20.0) -> void:
+    var row := action_row(box, caption)
+    var amount := SpinBox.new()
+    amount.min_value = minimum
+    amount.max_value = maximum
+    amount.value = minimum
+    amount.step = 1
+    row.add_child(amount)
+    action_fields[key] = amount
+
+func action_button(box: VBoxContainer, caption: String, callback: Callable) -> void:
+    var button := Button.new()
+    button.text = caption
+    button.pressed.connect(callback)
+    box.add_child(button)
+
+func action_note(box: VBoxContainer, text: String) -> void:
+    var note := Label.new()
+    note.text = text
+    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    note.custom_minimum_size.x = 540
+    note.add_theme_font_size_override("font_size", 13)
+    box.add_child(note)
+
+func action_value(key: String) -> String:
+    var field: OptionButton = action_fields[key]
+    return field.get_item_text(field.selected) if field.selected >= 0 else ""
+
+func _make_actions() -> void:
+    actions_popup = PopupPanel.new()
+    actions_popup.size = Vector2i(620, 620)
+    actions_popup.popup_hide.connect(func(): actions_open = false)
+    add_child(actions_popup)
+    var tabs := TabContainer.new()
+    tabs.position = Vector2(16, 16)
+    tabs.size = Vector2(588, 540)
+    actions_popup.add_child(tabs)
+    var trade := VBoxContainer.new()
+    trade.name = "Trade"
+    tabs.add_child(trade)
+    action_note(trade, "Offers target the selected nearby inhabitant. They transfer nothing until accepted. Incoming offers may expire or fail if stock/proximity changes.")
+    var goods := ["food", "water", "wood", "stone", "metal", "tools"]
+    action_options(trade, "Give", "offered", goods)
+    action_fields.offered.select(2)
+    action_options(trade, "Request", "wanted", goods)
+    action_amount(trade, "Units each", "amount")
+    action_button(trade, "Propose offer to selected inhabitant", func(): player_command({"action": "offer", "target": selected, "offered": action_value("offered"), "wanted": action_value("wanted"), "amount": action_fields.amount.value}))
+    action_options(trade, "Incoming offer", "agreement", [])
+    action_button(trade, "Accept selected incoming offer", func(): _agreement_action("accept"))
+    action_button(trade, "Reject selected incoming offer", func(): _agreement_action("reject"))
+    var workshop := VBoxContainer.new()
+    workshop.name = "Workshop"
+    tabs.add_child(workshop)
+    action_note(workshop, "Crafting requires a nearby completed home workshop, owned materials and stamina. Equipment is added only after consuming its recipe inputs.")
+    action_options(workshop, "Recipe", "recipe", ["tools", "staff", "shield", "padded_coat"])
+    action_button(workshop, "Craft selected recipe", func(): player_command({"action": "craft", "item": action_value("recipe")}))
+    action_options(workshop, "Store item", "stock_kind", goods)
+    action_amount(workshop, "Store units", "stock_amount")
+    action_button(workshop, "Retrieve from home store", func(): player_command({"action": "retrieve", "kind": action_value("stock_kind"), "amount": action_fields.stock_amount.value}))
+    action_button(workshop, "Deposit in home store", func(): player_command({"action": "store", "kind": action_value("stock_kind"), "amount": action_fields.stock_amount.value}))
+    var teach_row := action_row(workshop, "Teach skill / claim")
+    var topic := LineEdit.new()
+    topic.text = "gather"
+    topic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    teach_row.add_child(topic)
+    action_fields.topic = topic
+    action_button(workshop, "Teach selected nearby inhabitant", func(): player_command({"action": "teach", "target": selected, "topic": action_fields.topic.text.strip_edges()}))
+    action_button(workshop, "Repair selected building (uses owned wood)", func(): player_command({"action": "repair", "building": selected}))
+    var civic := VBoxContainer.new()
+    civic.name = "Council"
+    tabs.add_child(civic)
+    action_note(civic, "Proposals enter the settlement's decision process; they are not immediate commands. Only council members can cast binding votes. Group projects need materials and work.")
+    action_options(civic, "Policy", "policy", ["share_surplus", "rationing", "open_trade", "defense"])
+    action_button(civic, "Submit policy proposal", func(): player_command({"action": "propose", "policy": action_value("policy")}))
+    action_button(civic, "Propose building selected in main toolbar", func(): player_command({"action": "propose", "policy": "group_project", "kind": building_choice.get_item_text(building_choice.selected)}))
+    action_options(civic, "Open proposal", "proposal", [])
+    action_button(civic, "Vote to approve (council only)", func(): _proposal_vote(true))
+    action_button(civic, "Vote to reject (council only)", func(): _proposal_vote(false))
+    var build := VBoxContainer.new()
+    build.name = "Build"
+    tabs.add_child(build)
+    action_note(build, "Uses the building kind selected in the main toolbar. Roads and bridges require a valid site, proximity and materials. Explicit placement is validated by the engine.")
+    var use_site := CheckBox.new()
+    use_site.text = "Use the explicit map tile below"
+    build.add_child(use_site)
+    action_fields.use_site = use_site
+    action_amount(build, "Tile X", "site_x", 0, 200)
+    action_amount(build, "Tile Y", "site_y", 0, 200)
+    action_button(build, "Pick a tile on the map", func(): placing_site = true; actions_popup.hide(); status_label.text = "Click a map tile for the building site. Escape cancels.")
+    action_button(build, "Start selected construction", _build_at_site)
+    action_button(build, "Contribute work to selected project", func(): player_command({"action": "work", "building": selected}))
+    action_button(build, "Repair selected building", func(): player_command({"action": "repair", "building": selected}))
+    var close := Button.new()
+    close.text = "Close"
+    close.position = Vector2(16, 566)
+    close.size = Vector2(588, 32)
+    close.pressed.connect(func(): actions_popup.hide())
+    actions_popup.add_child(close)
+
+func _open_actions() -> void:
+    if not player_mode:
+        status_label.text = "Switch to Player mode to act in the world."
+        return
+    _refresh_action_lists()
+    actions_open = true
+    actions_popup.popup_centered()
+
+func _refresh_action_lists() -> void:
+    var previous_agreement := agreement_ids[action_fields.agreement.selected] if action_fields.agreement.selected >= 0 and action_fields.agreement.selected < agreement_ids.size() else ""
+    var previous_proposal := proposal_ids[action_fields.proposal.selected] if action_fields.proposal.selected >= 0 and action_fields.proposal.selected < proposal_ids.size() else ""
+    agreement_ids.clear()
+    action_fields.agreement.clear()
+    for agreement in state.get("agreements", {}).values():
+        if agreement.get("recipient") == "player" and agreement.get("state") == "proposed":
+            agreement_ids.append(agreement.id)
+            var name: String = str(state.agents.get(agreement.proposer, {}).get("name", agreement.proposer))
+            action_fields.agreement.add_item("%s: %s %s for %s" % [name, agreement.amount, agreement.offered, agreement.wanted])
+    if previous_agreement in agreement_ids: action_fields.agreement.select(agreement_ids.find(previous_agreement))
+    proposal_ids.clear()
+    action_fields.proposal.clear()
+    var home: String = str(state.get("agents", {}).get("player", {}).get("home", "a"))
+    for proposal in state.get("proposals", {}).values():
+        if proposal.get("settlement") == home and proposal.get("state") == "open":
+            proposal_ids.append(proposal.id)
+            action_fields.proposal.add_item("%s: %s %s" % [proposal.id, proposal.policy, proposal.get("kind", "")])
+    if previous_proposal in proposal_ids: action_fields.proposal.select(proposal_ids.find(previous_proposal))
+
+func _agreement_action(action: String) -> void:
+    var index: int = action_fields.agreement.selected
+    if index < 0 or index >= agreement_ids.size():
+        status_label.text = "No pending incoming offer is selected."
+        return
+    player_command({"action": action, "agreement": agreement_ids[index]})
+
+func _proposal_vote(approve: bool) -> void:
+    var index: int = action_fields.proposal.selected
+    if index < 0 or index >= proposal_ids.size():
+        status_label.text = "No open home-settlement proposal is selected."
+        return
+    player_command({"action": "vote", "proposal": proposal_ids[index], "approve": approve})
+
+func _build_at_site() -> void:
+    var command := {"action": "build", "kind": building_choice.get_item_text(building_choice.selected)}
+    if action_fields.use_site.button_pressed:
+        command.x = int(action_fields.site_x.value)
+        command.y = int(action_fields.site_y.value)
+    player_command(command)
