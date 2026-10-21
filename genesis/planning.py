@@ -15,6 +15,7 @@ SCHEMAS = {
     'equip': {'item': 'owned equipment'},
     'trade': {'target': 'agent id', 'offered': 'resource', 'wanted': 'resource', 'amount': 'positive number'},
     'offer': {'target': 'agent id', 'offered': 'resource', 'wanted': 'resource', 'amount': 'positive number'},
+    'commit_work': {'target': 'nearby conversation partner', 'building': 'visible unfinished home building'},
     'accept': {'agreement': 'agreement id'}, 'reject': {'agreement': 'agreement id'},
     'talk': {'target': 'nearby agent id', 'message': 'natural-language speech'},
     'share': {'target': 'nearby agent id', 'claim': 'a claim already in your knowledge'},
@@ -54,7 +55,32 @@ def validate_plan(data):
     speech = data.get('speech', '')
     if not isinstance(speech, str) or len(speech) > 2000:
         raise ValueError('Speech must be bounded text')
+    policy = data.get('plan_policy', 'keep')
+    revision = data.get('revision_reason', '')
+    if policy not in ('keep', 'append', 'replace') or not isinstance(revision, str) or len(revision) > 400:
+        raise ValueError('Use keep/append/replace and a bounded revision_reason')
+    if policy == 'replace' and len(revision.strip()) < 8:
+        raise ValueError('Replacing a plan requires a meaningful revision_reason')
+    conversation = data.get('conversation')
+    if conversation is not None:
+        if not isinstance(conversation, dict) or set(conversation)-{'target', 'topic', 'message'}:
+            raise ValueError('Conversation requires target, topic and message only')
+        for key, maximum in (('target', 80), ('topic', 100), ('message', 1200)):
+            value = conversation.get(key, '')
+            if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+                raise ValueError('Conversation fields must be nonempty bounded text')
+    dialogue_actions = data.get('dialogue_actions', [])
+    if not isinstance(dialogue_actions, list) or len(dialogue_actions) > 2:
+        raise ValueError('At most two dialogue actions may be proposed per turn')
+    for action in dialogue_actions:
+        if not isinstance(action, dict) or action.get('action') not in ('offer', 'accept', 'reject', 'help', 'teach', 'share', 'commit_work', 'conflict_response'):
+            raise ValueError('Unsupported dialogue action')
+    if dialogue_actions:
+        # Reuse exactly the same flat argument validation as ordinary plans.
+        dialogue_actions = validate_plan({'plan': dialogue_actions})['plan']
     return {'goal': goal, 'plan': steps, 'speech': speech,
+            'plan_policy': policy, 'revision_reason': revision.strip(),
+            'conversation': conversation, 'dialogue_actions': dialogue_actions,
             'reflection': str(data.get('reflection', ''))[:1000],
             'end_conversation': bool(data.get('end_conversation', False))}
 
@@ -72,7 +98,7 @@ def execute_plan(world, agent):
         result = {'ok': False, 'message': 'Action timed out after 300 ticks'}
     else:
         result = execute(world, {k: v for k, v in step.items() if not k.startswith('_')}, actor_id=agent.id, planned=True)
-    agent.reason = f'Plan: {agent.goals[-1].get("description", "chosen goal") if agent.goals else "chosen goal"}; step {agent.plan_index+1}'
+    agent.reason = f'Plan: {agent.plan_goal or (agent.goals[-1].get("description", "chosen goal") if agent.goals else "chosen goal")}; step {agent.plan_index+1}'
     if not result['ok']:
         agent.plan_status = 'failed'
         agent.plan_error = result['message']
@@ -86,4 +112,32 @@ def execute_plan(world, agent):
             agent.plan_status = 'completed'
             agent.next_reason_tick = world.tick+5
             world.event('plan_completed', f'{agent.name} completed a plan.', [agent.id])
+    return True
+
+
+def adopt_plan(world, agent, proposal):
+    """Conversation and periodic reflection preserve unfinished physical work by default."""
+    proposed = proposal['plan']
+    active = agent.plan_status == 'active' and agent.plan_index < len(agent.plan)
+    policy = proposal['plan_policy']
+    if not proposed:
+        return False
+    if active and policy == 'keep':
+        agent.plan_feedback = 'Preserved unfinished plan; use append or replace with a concrete reason to change it.'
+        return False
+    if active and policy == 'append':
+        if len(agent.plan)-agent.plan_index+len(proposed) > 16:
+            agent.plan_feedback = 'Append refused: at most 16 unfinished steps are allowed.'
+            return False
+        # Keep the running step, including its engine-owned start time and progress.
+        agent.plan = agent.plan[agent.plan_index:] + proposed
+        agent.plan_index = 0
+        agent.plan_feedback = 'Added steps after the current task.'
+    else:
+        if active:
+            world.event('plan_revised', f'{agent.name} revised a plan: {proposal["revision_reason"]}', [agent.id])
+        agent.plan, agent.plan_index, agent.plan_status = proposed, 0, 'active'
+        agent.plan_goal = proposal['goal']
+        agent.plan_feedback = 'Plan revised: '+proposal['revision_reason'] if active else 'New plan adopted.'
+    agent.plan_error = ''
     return True

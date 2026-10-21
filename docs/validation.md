@@ -4,7 +4,11 @@ Runtime: Linux, Python 3.12.14, Godot 4.6.3 stable official. Standard-library Py
 
 ## Test outcomes
 
-`python3 -m unittest discover -s tests -v` discovered **75 tests**: **73 passed, 2 skipped, 0 failed**, in **8.805 seconds**. Skips are the two explicitly opt-in real-inference tests. Original tests remain intact. The final context/perception refinement additionally passed all 14 cognition tests.
+Current follow-up base: `b9bbcc6869f07d9afd7f52ac1cd0331c6d6d6eed`.
+
+`python3 -m unittest discover -s tests -v` discovered **92 tests**: **90 passed, 2 skipped, 0 failed**, in **9.768 seconds**. Skips remain the two explicitly opt-in real-inference tests. All previous tests are retained. The offline 10,000-tick regression completed in **6.37 seconds**, keeping 2,048 events and completing eight buildings.
+
+Seventeen new communication regressions exercise plan preservation/append/revision, an autonomous project discussion followed by real construction and save/load, negotiated resource-conserving barter with confirmations, private/partner-relevant memory, active conversation exclusion, stale request refresh/cancellation, agent-to-player contact, courier pauses, commitment expiry, repeated-speech limits and settings-disable recovery. These use explicit fake providers; no real model quality claim is made. A confirmed old routine-construction shortcut now has a regression proving workers must reach the site.
 
 | Scenario | Executed evidence | Limits |
 | --- | --- | --- |
@@ -21,7 +25,7 @@ Runtime: Linux, Python 3.12.14, Godot 4.6.3 stable official. Standard-library Py
 
 Additional regressions verify bounded whole-context JSON, private detached requests, per-agent/global budgets and concurrency, engaged listeners staying nearby while inference waits, explicit budget exhaustion while paused, governance withdrawal enforcement, hidden destination restrictions, invalid settings, storage failure pausing visibly, semantically corrupt save rejection, remote bridge construction, and resource-costed practical research.
 
-## Standalone archived simulation
+## Previous milestone standalone archived simulation (b9bbcc6)
 
 Executed:
 
@@ -39,16 +43,17 @@ Exit 0, **8.19 seconds**, tick 10,000. Observed values:
 
 This is an observed cloud CPU measurement. No real reasoning-throughput or RTX 5070 performance claim is made. Runtime cognition metrics expose submitted/completed/failed/stale calls, queue/in-flight counts, latency, throughput and budget use for measurement on a real provider.
 
-## Godot and desktop distinction
+## Godot: headless and actual graphical checks
 
-Both commands completed successfully with writable XDG runtime directories and a real backend on port 8768:
+`bash scripts/check_client.sh http://127.0.0.1:8768` passed against an actual backend. This imports the project, runs the main-scene smoke and runs `godot/tests/presentation_check.gd`.
 
-```sh
-godot --headless --path godot --editor --import --quit
-godot --headless --path godot -- --smoke --api=http://127.0.0.1:8768
-```
+Checks cover live inspector/inventory, focus/zoom/fit, modes, journal, valid numeric settings and non-overlapping popup controls; all terrain/building silhouettes, construction, humans/wildlife, conversations/cargo, one-shot feedback, retained terrain cache, seasonal refresh and safe text formatting.
 
-The scene smoke exercised real state, inspector/inventory, camera zoom/reset, observer/player switches, model settings and the additional action panel. Source has a graphical map, dialogue history, offer controls and placement input, but this is **headless scene validation only**. No desktop display/Xvfb was available; system package installation lacked permissions. Actual pixels, held-key usability and desktop end-to-end interactions are **unverified**. Windows was not run. No binary executable export was produced.
+**Godot was also launched graphically**, using an Xvfb executable extracted into `/tmp` and Mesa llvmpipe software OpenGL. No system package installation or project dependency was required. Actual screenshots were inspected and are included in [the client guide](client-v2.md). Graphical validation caught and corrected terrain hidden below the panel, repeated event feedback, close buttons covering popup contents, and integer settings rendered as decimals.
+
+Actual X11 mouse/keyboard events exercised Player/Observer switching, keyboard movement, focus, wheel zoom, Mind, Journal, actions and Settings. Observer movement did not move the player; Player movement changed backend coordinates from `(9, 11)` to `(10, 11)` in the final input run. Editing the global reasoning budget to 65 and clicking Apply changed the authoritative backend config. Graphical `--smoke --capture=...` also completed successfully with both overview and detail captures.
+
+This is automated graphical/input validation under virtual Linux. It is not a human desktop playtest, Windows/macOS run, accessibility review, hardware-GPU benchmark or exported executable validation. No live model was connected to these visual tests.
 
 ## Real inference remains unrun
 

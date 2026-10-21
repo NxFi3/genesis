@@ -13,9 +13,10 @@ import time
 
 from . import combat
 from .memory import context, remember
-from .planning import SCHEMAS, validate_plan
+from .planning import SCHEMAS, validate_plan, adopt_plan
 from .providers import InferenceConfig, generate
 from .social import hear, upkeep
+from .communication import opportunities, dialogue_context
 
 SYSTEM = (
     'You are ONE independent human inhabitant in the fictional medieval world GENESIS. '
@@ -24,9 +25,10 @@ SYSTEM = (
     'Choose actions ONLY from the provided schemas, using exact known entity IDs. Gather needs reach; move first. '
     'Plan up to 16 steps with flat arguments. No direct world edits, damage values, or invented capabilities. '
     'When speaking, use natural language grounded in your own personality, memories and circumstances. '
-    'To initiate a conversation use a talk step with nearby target and meaningful message. '
-    'For a conversation response put your reply in speech; you can include a practical plan such as offer/accept/help/build. '
-    'Only explicit recipient accept fulfills an offer. Do not automatically obey requests or believe rumors. '
+    'To initiate conversation now, optionally return conversation:{target,topic,message}; choose a supplied opportunity or your own grounded reason. Never invent speech for others. '
+    'For a reply use speech: concise, specific, in your own voice. Address the latest message and avoid repeated greetings. Reports remain uncertain. '
+    'Only explicit recipient accept fulfills an offer. Optional dialogue_actions (up to 2: offer/accept/reject/help/teach/share/commit_work/conflict_response) act with this partner through engine validation. Check outcomes on your next turn; promising is not doing. Do not automatically obey or believe rumors. '
+    'Keep useful ongoing plans during conversation. plan_policy defaults to keep; append adds steps; replace requires a concrete revision_reason explaining changed needs, evidence or failure. Never restart completed steps. Empty plan preserves current work. '
     'Return a JSON object: {"goal":"free-form personal goal", "plan":[{"action":"observe"}], '
     '"speech":"optional reply", "stance":"agree|question|disagree|neutral", '
     '"reflection":"brief lesson or reconsideration", "end_conversation":false}.'
@@ -68,7 +70,7 @@ def fit_context(payload, limit):
         data['pending_offers'] = data.get('pending_offers', [])[-2:]
     if size() > limit:
         agent = data['agent']
-        for key in ('memories', 'knowledge', 'long_term_goals', 'commitments', 'plan'):
+        for key in ('memories', 'knowledge', 'long_term_goals', 'commitments', 'plan', 'semantic_memory', 'projects'):
             if key in agent:
                 agent[key] = agent[key][-2:]
         agent['reflection'] = agent.get('reflection', '')[-300:]
@@ -79,9 +81,20 @@ def fit_context(payload, limit):
         data.pop('capabilities', None)
         original = data['agent']
         data['agent'] = {key: original[key] for key in ('identity', 'needs', 'inventory', 'location', 'failure') if key in original}
-        data['pending_offers'] = []
+        data['pending_offers'] = data.get('pending_offers', [])[-1:]
+        data.pop('social_opportunities', None)
+        if 'conversation' in data:
+            data['conversation'].pop('instruction', None)
+            partner = data['conversation'].get('partner', {})
+            partner.pop('your_reports_from_them', None)
         for turn in turns:
             turn['text'] = turn['text'][-300:]
+    if size() > limit:
+        # A small context exposes a useful subset of schemas instead of losing the reply.
+        keep = ('move', 'observe', 'eat', 'drink', 'rest', 'talk', 'offer', 'accept', 'reject', 'help', 'conflict_response')
+        data['action_schemas'] = {k: v for k, v in data.get('action_schemas', {}).items() if k in keep}
+        if 'conversation' in data:
+            data['conversation']['outcomes'] = data['conversation'].get('outcomes', [])[-2:]
     if size() > limit:
         raise ValueError('Cannot fit the minimal private context within configured budget')
     return data
@@ -119,7 +132,9 @@ class Scheduler:
         self.events_seen = {}
 
     def status(self):
-        return {'mode': 'llm' if self.config.enabled else 'offline', 'config': self.config.public(),
+        states = {job.agent: 'queued' for job in self.queue if job.epoch == self.epoch}
+        states.update({job.agent: 'thinking' for job, _ in self.inflight.values() if job.epoch == self.epoch})
+        return {'agents': states, 'mode': 'llm' if self.config.enabled else 'offline', 'config': self.config.public(),
                 'metrics': {**self.metrics, 'queued': len(self.queue), 'inflight': len(self.inflight),
                             'throughput_per_minute': round(self.metrics['completed']*60/max(1, time.monotonic()-self.started), 3),
                             'global_budget_used': self.global_used}}
@@ -157,27 +172,35 @@ class Scheduler:
             return False
         # Schema/system and recent conversation also consume the total context budget.
         allowance = max(1600, self.config.context_limit-len(SYSTEM)-len(json.dumps(SCHEMAS))-3000)
-        private = context(world, agent, reason, allowance)
+        c = world.conversations.get(conversation) if conversation else None
+        partner_id = next((x for x in c['participants'] if x != aid), None) if c else None
+        query = reason+' '+(' '.join(t['text'] for t in c['turns'][-2:]) if c else '')
+        private = context(world, agent, query, allowance, partner_id=partner_id)
         from .world import BUILDINGS, RECIPES
         from .technology import TECHNOLOGIES
         data = {'reason': reason, 'agent': private, 'action_schemas': SCHEMAS,
                 'capabilities': {'building_costs': {kind: {k: v for k, v in recipe.items() if k in agent.inventory or k == 'duration'} for kind, recipe in BUILDINGS.items()}, 'recipes': RECIPES, 'practical_methods': TECHNOLOGIES},
                 'pending_offers': [x for x in world.agreements.values() if x['state'] == 'proposed' and aid in (x['proposer'], x['recipient'])][-6:]}
-        if conversation:
-            c = world.conversations[conversation]
-            data['conversation'] = {'id': c['id'], 'participants': c['participants'], 'turns': c['turns'][-6:]}
+        if c:
+            data['conversation'] = dialogue_context(world, agent, c)
+        else:
+            data['social_opportunities'] = opportunities(world, agent)
         heapq.heappush(self.queue, Request(priority, next(self.serial), aid,
                                          'conversation' if conversation else 'plan', self.epoch,
                                          agent.cognition_revision, world.tick, fit_context(data, self.config.context_limit), conversation))
         return True
 
-    def speak(self, world, speaker_id, target_id, message, source='player'):
-        speaker, target = world.agents[speaker_id], world.agents[target_id]
+    def speak(self, world, speaker_id, target_id, message, source='player', topic='conversation'):
+        speaker, target = world.agents.get(speaker_id), world.agents.get(target_id)
+        if not speaker or not target or speaker_id == target_id or not isinstance(message, str) or not message.strip():
+            raise ValueError('A conversation needs two distinct participants and a nonempty message')
+        if any(c['state'] == 'active' and set(c['participants']) & {speaker_id, target_id} for c in world.conversations.values()):
+            raise ValueError('A participant is already speaking; wait for the current reply')
         if combat.distance(speaker, target) > 3 or speaker.incapacitated or target.incapacitated:
             raise ValueError('Speakers must be conscious and within three tiles')
         if not self.config.enabled:
             raise ValueError('LLM mode is disabled; enable it in settings or with --ollama')
-        if self.window == world.tick//self.config.budget_window and (self.global_used >= self.config.global_budget or self.budgets.get(target_id, 0) >= self.config.per_agent_budget):
+        if not target.player and self.window == world.tick//self.config.budget_window and (self.global_used >= self.config.global_budget or self.budgets.get(target_id, 0) >= self.config.per_agent_budget):
             raise ValueError('Reasoning budget exhausted; advance the simulation to a new budget window or raise the budget in settings')
         existing = next((c for c in reversed(list(world.conversations.values())) if set(c['participants']) == {speaker_id, target_id} and c['state'] == 'waiting_player'), None)
         if existing:
@@ -188,14 +211,22 @@ class Scheduler:
                 raise ValueError('Conversation capacity reached; let current conversations finish')
             cid = f'd{world.next_event}'
             c = {'id': cid, 'participants': [speaker_id, target_id], 'turns': [], 'state': 'active',
-                 'created': world.tick, 'updated': world.tick, 'next_speaker': target_id}
+                 'created': world.tick, 'updated': world.tick, 'next_speaker': target_id,
+                 'topic': str(topic)[:100], 'outcomes': [], 'assessed': []}
             world.conversations[cid] = c
         # A queued turn must not be overwritten by another player POST.
         if existing and c.get('next_speaker') and self._busy(target_id):
             raise ValueError('Wait for the current reply')
+        for person, other in ((speaker, target), (target, speaker)):
+            person.social_contacts[other.id] = world.tick
+            person.social_contacts = dict(sorted(person.social_contacts.items(), key=lambda x: x[1])[-40:])
+        # Drop obsolete queued reflection so direct dialogue takes its place.
+        self.queue[:] = [job for job in self.queue if job.agent != target_id or job.conversation]
+        heapq.heapify(self.queue)
         self._utterance(world, c, speaker, target, message, source)
-        c['state'], c['next_speaker'] = 'active', target_id
-        self.request(world, target_id, 'important conversation', 0, c['id'])
+        c['state'], c['next_speaker'] = ('waiting_player', None) if target.player else ('active', target_id)
+        if not target.player:
+            self.request(world, target_id, 'important conversation', 0, c['id'])
         return c['id']
 
     def _utterance(self, world, conversation, speaker, listener, speech, source):
@@ -206,6 +237,7 @@ class Scheduler:
         conversation['turns'] = conversation['turns'][-24:]
         conversation['updated'] = world.tick
         hear(world, listener, speaker, speech)
+        listener.cognition_revision += 1
         world.event('dialogue', f'{speaker.name}: {speech}', [speaker.id, listener.id],
                     conversation=conversation['id'], source=source)
 
@@ -244,10 +276,8 @@ class Scheduler:
             agent.goals.append(entry)
             if not any(x.get('description') == proposal['goal'] for x in agent.long_term_goals):
                 agent.long_term_goals.append(dict(entry))
-        if proposal['plan']:
-            agent.plan, agent.plan_index, agent.plan_status = proposal['plan'], 0, 'active'
-            agent.plan_error = ''
-        if world.active(agent.id) and agent.plan and agent.plan[0].get('action') == 'conflict_response':
+        adopted = adopt_plan(world, agent, proposal)
+        if adopted and world.active(agent.id) and agent.plan and agent.plan[0].get('action') == 'conflict_response':
             from .actions import execute
             outcome = execute(world, agent.plan[0], actor_id=agent.id, planned=True)
             if outcome['ok']:
@@ -270,20 +300,58 @@ class Scheduler:
                 c['state'] = 'ended'
                 return
             self._utterance(world, c, agent, other, proposal['speech'], 'llm')
+            self._dialogue_actions(world, c, agent, other, proposal['dialogue_actions'])
             stance = response['data'].get('stance', 'neutral')
             # Engine interprets a bounded social assessment of an actual heard statement.
-            if stance in ('agree', 'disagree', 'question'):
+            if stance in ('agree', 'disagree', 'question') and agent.id not in c.setdefault('assessed', []):
+                c['assessed'].append(agent.id)
                 change = {'agree': .025, 'disagree': -.025, 'question': -.005}[stance]
                 world.relate(agent, other, change)
-            if other.player:
+            if self._repeated(c, agent.id):
+                c['state'], c['next_speaker'] = 'ended', None
+                c['closure'] = 'Repeated statements; conversation concluded without inventing a new outcome'
+            elif other.player:
+                # Keep the thread replyable even if the NPC considers this topic settled.
                 c['state'], c['next_speaker'] = 'waiting_player', None
             elif proposal['end_conversation'] or len(c['turns']) >= self.config.max_turns:
                 c['state'], c['next_speaker'] = 'ended', None
             else:
                 c['next_speaker'] = other.id
+        elif proposal['conversation']:
+            intent = proposal['conversation']
+            try:
+                self.speak(world, agent.id, intent['target'], intent['message'], 'llm', intent['topic'])
+            except ValueError as exc:
+                agent.plan_feedback = 'Conversation could not start: '+str(exc)
+                remember(agent, world.tick, agent.plan_feedback, 'action_feedback')
         elif proposal['speech']:
             # Unaddressed prose is private reflection, not a fabricated conversation.
             remember(agent, world.tick, proposal['speech'], 'private_reasoning', 1, .5)
+
+    @staticmethod
+    def _repeated(conversation, speaker_id):
+        import re
+        own = [re.sub(r'\W+', ' ', t['text'].lower()).strip() for t in conversation['turns'] if t['speaker'] == speaker_id]
+        return len(own) >= 3 and own[-1] == own[-2] == own[-3]
+
+    def _dialogue_actions(self, world, conversation, actor, partner, commands):
+        from .actions import execute
+        for command in commands:
+            related = command.get('target', partner.id) == partner.id
+            if command['action'] in ('accept', 'reject'):
+                agreement = world.agreements.get(command.get('agreement'), {})
+                related = {agreement.get('proposer'), agreement.get('recipient')} == {actor.id, partner.id}
+            result = execute(world, command, actor.id, planned=True) if related else {'ok': False, 'message': 'Dialogue actions must involve this conversation partner'}
+            outcome = {'tick': world.tick, 'actor': actor.id, 'action': command['action'],
+                       'ok': result['ok'], 'message': result['message']}
+            if 'agreement' in result:
+                outcome['agreement'] = result['agreement']
+            conversation.setdefault('outcomes', []).append(outcome)
+            conversation['outcomes'] = conversation['outcomes'][-16:]
+            for person in (actor, partner):
+                remember(person, world.tick, f'{actor.name}: {command["action"]} — {result["message"]}', 'engine_confirmation', 3)
+            if not result['ok']:
+                actor.plan_feedback = result['message']
 
     def pump(self, world, schedule=True):
         if self.closed:
@@ -304,6 +372,9 @@ class Scheduler:
             self._apply(world, job, response)
         upkeep(world)
         if not self.config.enabled:
+            for c in world.conversations.values():
+                if c['state'] == 'active':
+                    c['state'], c['next_speaker'], c['error'] = 'failed', None, 'LLM cognition was disabled before the reply completed'
             return
         window = world.tick//self.config.budget_window
         if self.window != window:
@@ -329,9 +400,14 @@ class Scheduler:
                                 ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision') for e in world.events[-80:])
                 if world.events:
                     self.events_seen[agent.id] = world.events[-1]['id']
-                if important or (world.tick >= agent.next_reason_tick and (agent.plan_status != 'active' or world.tick-agent.last_reasoned >= self.config.reasoning_interval*3)):
-                    reason = 'new important information' if important else ('failed plan: '+agent.plan_error if agent.plan_status == 'failed' else 'choose or revise a personal goal')
-                    self.request(world, agent.id, reason, 2 if important else 5)
+                # Conversation turns have their own priority and should not trigger unrelated reflection loops.
+                engaged = any(c['state'] == 'active' and agent.id in c['participants'] for c in world.conversations.values())
+                social = opportunities(world, agent) if not engaged and world.tick >= agent.next_reason_tick else []
+                if not engaged and (important or social or (world.tick >= agent.next_reason_tick and (agent.plan_status != 'active' or world.tick-agent.last_reasoned >= self.config.reasoning_interval*3))):
+                    reason = ('new important information; preserve useful ongoing work' if important else
+                              'consider a voluntary conversation: '+social[0]['reason'] if social else
+                              'failed plan: '+agent.plan_error if agent.plan_status == 'failed' else 'review progress or choose a new goal')
+                    self.request(world, agent.id, reason, 2 if important else 4 if social else 5)
         # Fair budget enforcement; queue stays bounded and no futures pile up inside executor.
         deferred = []
         while self.queue and len(self.inflight) < self.config.max_concurrency:
@@ -347,6 +423,19 @@ class Scheduler:
                         conversation['error'] = 'Reasoning budget exhausted; advance time or increase the configured budget'
                 else:
                     deferred.append(job)
+                continue
+            agent = world.agents.get(job.agent)
+            if not agent or agent.incapacitated:
+                self.metrics['stale'] += 1
+                continue
+            if job.conversation:
+                c = world.conversations.get(job.conversation)
+                if not c or c['state'] != 'active' or c.get('next_speaker') != job.agent:
+                    self.metrics['stale'] += 1
+                    continue
+            if job.revision != agent.cognition_revision or job.tick != world.tick:
+                # Requeue once with a fresh private snapshot; no inference on old observations.
+                self.request(world, job.agent, job.context['reason'], job.priority, job.conversation)
                 continue
             self.budgets[job.agent] = self.budgets.get(job.agent, 0)+1
             self.global_used += 1

@@ -42,6 +42,9 @@ class Agent:
     plan_index: int = 0
     plan_status: str = 'idle'
     plan_error: str = ''
+    plan_goal: str = ''
+    plan_feedback: str = ''
+    social_contacts: dict = field(default_factory=dict)
     cognition_revision: int = 0
     last_reasoned: int = -1000
     next_reason_tick: int = 0

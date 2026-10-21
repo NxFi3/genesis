@@ -91,7 +91,11 @@ def execute(world, command, actor_id='player', planned=False):
                 return done()
             from .world import BUILDINGS
             from .technology import modifier
+            previous_progress = b.progress
             b.progress += (1 + max(0, a.skills['build']-1)*.1)*modifier(world, a.home, 'construction')
+            for commitment in a.commitments:
+                if commitment.get('building') == b.id and commitment['state'] == 'active':
+                    commitment['contributed'] = commitment.get('contributed', 0)+b.progress-previous_progress
             a.skills['build'] = min(5, a.skills['build']+.005)
             a.stamina -= 3
             a.activity = 'build'
@@ -136,6 +140,9 @@ def execute(world, command, actor_id='player', planned=False):
         if action in ('offer', 'accept', 'reject'):
             from .social import agreement_action
             return agreement_action(world, a, command)
+        if action == 'commit_work':
+            from .social import commit_work
+            return commit_work(world, a, target, command.get('building'))
         if action == 'talk':
             if not target or target.id == a.id or combat.distance(a, target) > 3:
                 return fail('Conversation partner must be within three tiles')

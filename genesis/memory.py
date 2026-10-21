@@ -1,5 +1,6 @@
 """Private, bounded, provenance-aware cognition contexts."""
 import json
+import re
 from .combat import distance
 
 
@@ -40,33 +41,45 @@ def perceive(world, agent):
     # Geography may be remembered, resource quantities are explicitly old observations.
     agent.observations = dict(list(agent.observations.items())[-80:])
     return {'location': [round(agent.x, 2), round(agent.y, 2)], 'tick': world.tick,
-            'season': world.season, 'day_phase': getattr(world, 'day_phase', 'day'),
+            'season': world.season, 'day_phase': 'day' if world.daylight else 'night', 'weather': world.weather,
             'nearby_agents': [{'id': a.id, 'name': a.name, 'home': a.home, 'activity': a.activity,
                                'x': round(a.x, 2), 'y': round(a.y, 2)} for a in nearby],
             'resources': [x for key, x in agent.observations.items() if key in world.resources],
             'known_places': [x for key, x in agent.observations.items() if key in world.settlements],
-            'buildings': [{'id': b.id, 'kind': b.kind, 'complete': b.complete, 'x': b.x, 'y': b.y} for b in buildings]}
+            'buildings': [{'id': b.id, 'kind': b.kind, 'complete': b.complete, 'progress': b.progress, 'home': b.home, 'x': b.x, 'y': b.y} for b in buildings]}
 
 
-def context(world, agent, query='', limit=12000):
+def context(world, agent, query='', limit=12000, partner_id=None):
     perception = perceive(world, agent)
     home = world.settlements[agent.home]
+    words = set(re.findall(r'\w+', query.lower()))
+    def rank(entry):
+        claim = entry.get('claim', entry.get('content', ''))
+        return (len(words & set(re.findall(r'\w+', claim.lower()))) + (2 if partner_id and entry.get('source') == partner_id else 0), entry.get('tick', 0))
+    relevant = sorted(agent.knowledge, key=rank, reverse=True)[:10]
+    nearby_ids = {a['id'] for a in perception['nearby_agents']}
+    relations = sorted(agent.relationships.items(), key=lambda pair: (pair[0] == partner_id, pair[0] in nearby_ids, pair[1].get('familiarity', 0)), reverse=True)[:8]
     state = {'identity': {'id': agent.id, 'name': agent.name, 'personality': agent.personality,
                           'occupation': agent.occupation, 'skills': agent.skills},
              'needs': {k: getattr(agent, k) for k in ('hp', 'stamina', 'hunger', 'thirst', 'fatigue', 'shelter', 'safety', 'social')},
              'inventory': agent.inventory, 'equipment': agent.equipment, 'perception': perception,
-             'knowledge': agent.knowledge[-12:], 'relationships': agent.relationships,
+             'knowledge': relevant, 'relationships': dict(relations),
+             'semantic_memory': sorted(agent.semantic_memory, key=rank, reverse=True)[:3],
+             'projects': [b for b in perception['buildings'] if not b['complete']],
              'goals': agent.goals[-5:], 'long_term_goals': agent.long_term_goals[-4:],
-             'commitments': agent.commitments[-8:], 'plan': agent.plan[agent.plan_index:agent.plan_index+8],
+             'commitments': agent.commitments[-8:], 'plan': [{k: v for k, v in step.items() if not k.startswith('_')} for step in agent.plan[agent.plan_index:agent.plan_index+8]],
+             'plan_status': agent.plan_status, 'plan_goal': agent.plan_goal, 'plan_feedback': agent.plan_feedback,
              'conflicts': [{'opponent': c.b if c.a == agent.id else c.a, 'cause': c.cause} for c in world.conflicts.values() if c.state == 'active' and agent.id in (c.a, c.b)], 'failure': agent.plan_error, 'reflection': agent.reflection[-1200:],
              'memories': world.memories_for(agent.id, query, 8),
              'settlement': {'id': home.id, 'name': home.name, 'policy': home.policy}}
     # Stores are visible only when physically visiting the settlement store.
     if distance(agent, home) <= 3:
         state['settlement']['stores'] = dict(home.inventory)
+        state['settlement']['projects'] = world.governance.get(home.id, {}).get('projects', [])
         state['settlement']['public_methods'] = world.governance.get(home.id, {}).get('technology', [])
+    state['own_shipments'] = [s for s in world.shipments.values() if s['courier'] == agent.id and s['state'] in ('in_transit', 'returning', 'waiting')][-2:]
     # Trim whole records, never truncate into invalid JSON.
-    for key in ('memories', 'knowledge', 'relationships', 'perception'):
+    for key in ('memories', 'knowledge', 'semantic_memory', 'projects', 'relationships', 'perception'):
         if len(json.dumps(state)) <= limit:
             break
         if key == 'perception':
@@ -74,7 +87,7 @@ def context(world, agent, query='', limit=12000):
         elif key == 'relationships':
             state[key] = {k: v for k, v in list(state[key].items())[:4]}
         else:
-            state[key] = state[key][-2:]
+            state[key] = state[key][:2]
     if len(json.dumps(state)) > limit:
         state = {'identity': state['identity'], 'needs': state['needs'], 'inventory': state['inventory'],
                  'location': perception['location'], 'failure': agent.plan_error[:200]}

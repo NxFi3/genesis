@@ -41,7 +41,7 @@ Snapshots carry a bounded 2,048-event ring. Simulation event sinks incrementally
 ## Remaining limits
 
 - Real Ollama player/agent dialogue and model quality were not exercised in this runtime. Opt-in real-model tests are supplied. Model-produced plans can still fail or be poor; engine rejection and replan feedback preserve world integrity.
-- Godot was exercised headlessly against real HTTP state. No actual desktop display or Windows run was available. Pixel quality and desktop interaction are unverified; this is not an executable binary release.
+- Godot passed headless checks and actual graphical rendering/input checks under Xvfb/Mesa software OpenGL. A human desktop playtest, Windows/macOS execution and hardware-GPU profiling remain unverified; this is not an executable binary release. See [client validation](client-v2.md).
 - Initial occupations/leaders are seeded. Agents may specialize and councils make consequential decisions, but there are no elections, births/deaths of humans, migration, settlement founding, constitutions or unrestricted institutional evolution.
 - Economic negotiation is resource barter, explicit offers/commitments and cargo, not currency, a full price market, debt or a contract-law simulator. Equal-quantity offers and coarse demand heuristics are intentional current limits.
 - Practical research has two predefined methods. New recipes/technologies require definitions and engine support. There is no unrestricted technological invention or autonomous source-code generation.
@@ -53,3 +53,7 @@ Snapshots carry a bounded 2,048-event ring. Simulation event sinks incrementally
 - Default testing targets about 20 inhabitants. Cached BFS paths, bounded contexts and shared inference improve scaling, but large-population and target-GPU performance have not been benchmarked. SQLite archive disk usage grows with retained history.
 
 Prioritize genuine local-model acceptance runs, desktop interaction validation, and improvements based on observed failed plans before extending the supported action/recipe catalogue.
+
+## Visual and communication follow-up
+
+The current scheduler preserves unfinished plans by default, refreshes queued private contexts, and offers optional local conversation opportunities. Explicit dialogue actions can carry out validated exchanges or record work commitments without replacing an active plan. See [communication-update.md](communication-update.md) for the response contract and its limits. The Godot terrain layer is retained separately from animated entities; all art is procedural and simulation state remains authoritative.

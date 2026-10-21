@@ -4,6 +4,7 @@ from dataclasses import asdict
 from math import hypot
 import random
 import math
+import re
 
 from .models import Agent, Settlement, Resource, Building, Wildlife, Conflict
 from . import combat
@@ -101,7 +102,11 @@ class World:
             # Initial materials are explicit starting stock, not conjured by construction.
             for i in range(population):
                 aid = f'{sid}{i}'
-                a = Agent(aid, f'{name[:3]} {i+1}', x + i % 3 - 1, y + i // 3 % 3 - 1, sid)
+                given = ('Tavin', 'Mira', 'Oren', 'Sela', 'Brann', 'Eris', 'Lio', 'Nessa', 'Corin', 'Vela', 'Arlen', 'Fara', 'Dain', 'Iona', 'Renn', 'Lysa', 'Maren', 'Tessa', 'Fen', 'Anwen')
+                family = ('Reed', 'Alder', 'Moss', 'Vale', 'Rowan', 'Flint', 'Slate', 'Ash', 'Ember', 'Ridge')
+                identity_index = i + (100 if sid == 'b' else 0)
+                person_name = given[(identity_index+self.seed)%len(given)]+' '+family[identity_index//len(given)]
+                a = Agent(aid, person_name, x + i % 3 - 1, y + i // 3 % 3 - 1, sid)
                 a.personality = {'aggression': self.rng.uniform(.05, .85), 'courage': self.rng.random(), 'sociability': self.rng.random()}
                 a.occupation = 'guard' if i == 0 else ('builder' if i == 1 else 'gatherer')
                 if i == 0:
@@ -213,8 +218,8 @@ class World:
         return e
 
     def memories_for(self, aid, query='', limit=8):
-        words = set(query.lower().split())
-        return sorted(self.agents[aid].memories, key=lambda m: (m['importance'] + len(words & set(m['content'].lower().split())), m['tick']), reverse=True)[:limit]
+        words = set(re.findall(r'\w+', query.lower()))
+        return sorted(self.agents[aid].memories, key=lambda m: (m['importance'] + 2*len(words & set(re.findall(r'\w+', m['content'].lower()))), m['tick']), reverse=True)[:limit]
 
     def relate(self, a, b, change):
         r = a.relationships.setdefault(b.id, {'trust': 0, 'familiarity': 0, 'cooperation': 0, 'rivalry': 0, 'reputation': 0})
@@ -406,6 +411,9 @@ class World:
         from .planning import execute_plan
         if execute_plan(self, a):
             return
+        from .social import work_commitments
+        if work_commitments(self, a):
+            return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
         if injured:
             assisted = False
@@ -459,27 +467,23 @@ class World:
             return
         carried = sum(v for k, v in a.inventory.items() if k not in ('food', 'water'))
         if carried >= 10 or (a.occupation == 'builder' and self.tick % 30 < 15):
-            a.reason = 'Delivering materials or constructing settlement facilities'
-            if combat.distance(a, s) > 1.5:
-                self.move(a, s.x, s.y)
-                return
-            for k in a.inventory:
-                keep = 4 if k in ('food', 'water') else 0
-                amount = min(max(0, a.inventory[k] - keep), max(0, self.capacity(s) - sum(s.inventory.values())))
-                if amount:
-                    self.transfer(a.inventory, s.inventory, k, amount)
-            a.activity = 'store'
             pending = [b for b in self.buildings.values() if b.home == a.home and not b.complete]
             if pending:
-                b = pending[0]
-                b.progress += 1
-                a.stamina = max(0, a.stamina - 3)
-                a.activity = 'build'
-                if b.progress >= BUILDINGS[b.kind]['duration']:
-                    b.complete = True
-                    self.stats['built'] += 1
-                    self.event('built', f'{s.name} completed a {b.kind}.', [a.id])
+                from .actions import execute
+                b = min(pending, key=lambda b: combat.distance(a, b))
+                a.reason = 'Contributing work at an actual construction site'
+                execute(self, {'action': 'move', 'target': b.id} if combat.distance(a, b) > 2 else {'action': 'work', 'building': b.id}, a.id, planned=True)
             else:
+                a.reason = 'Delivering materials for settlement facilities'
+                if combat.distance(a, s) > 1.5:
+                    self.move(a, s.x, s.y)
+                    return
+                for k in a.inventory:
+                    keep = 4 if k in ('food', 'water') else 0
+                    amount = min(max(0, a.inventory[k]-keep), max(0, self.capacity(s)-sum(s.inventory.values())))
+                    if amount:
+                        self.transfer(a.inventory, s.inventory, k, amount)
+                a.activity = 'store'
                 requested = self.governance[s.id].get('projects', [])
                 for kind in [*requested, 'farm', 'workshop', 'market', 'watchtower']:
                     if self.construct(a, kind):
@@ -654,6 +658,8 @@ class World:
                     self.transfer(cargo, destination.inventory, offered, quantity)
                     self.transfer(destination.inventory, cargo, wanted, quantity)
                     shipment['state'] = 'returning'
+                    shipment['depart_after'] = self.tick+8
+                    courier.next_reason_tick = self.tick
                     self.stats['traded'] += quantity*2
                     self.event('settlement_trade', f'{courier.name} exchanged {quantity:g} {offered} for {wanted} at {destination.name}.', [courier.id])
                 else:
@@ -806,10 +812,14 @@ class World:
                         combat.recover(a, a.activity in ('rest', 'sleep') or a.incapacitated)
                     else:
                         shipment = next((s for s in self.shipments.values() if s['courier'] == a.id and s['state'] in ('in_transit', 'returning')), None)
-                        if shipment and a.hunger < 45 and a.thirst < 45 and a.stamina >= 25 and a.fatigue < 75:
+                        talking = any(c['state'] == 'active' and a.id in c['participants'] for c in self.conversations.values())
+                        if shipment and not talking and a.hunger < 45 and a.thirst < 45 and a.stamina >= 25 and a.fatigue < 75:
                             destination = self.settlements[shipment['destination'] if shipment['state'] == 'in_transit' else shipment['origin']]
                             a.reason = 'Transporting real goods under a settlement trade agreement'
-                            self.move(a, destination.x, destination.y)
+                            if self.tick < shipment.get('depart_after', 0):
+                                a.activity, a.reason = 'trade', 'Receiving traded goods; available for nearby conversation'
+                            else:
+                                self.move(a, destination.x, destination.y)
                         else:
                             self._routine(a)
                         combat.recover(a, False)

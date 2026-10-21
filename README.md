@@ -4,6 +4,8 @@ An evolving 2D medieval sandbox with independent human agents, a Python simulati
 
 **Development branch:** `feature/genesis-agentic-v2`, based on `999bc94`. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Validation and acceptance evidence](docs/validation.md) · [Architecture and remaining limits](docs/architecture.md) · [Development log](docs/development-v2.md).
 
+The latest update adds procedural colony artwork, readable inspectors, a larger conversation journal, grounded conversation opportunities, preserved plans and work commitments. [Client guide and screenshots](docs/client-v2.md) · [Conversation behavior](docs/communication-update.md).
+
 ## Start locally
 
 Install **Python 3.11+** and **Godot 4.x** on PATH (`godot`, `godot4`, or `godot.exe`). Python uses only its standard library; no pip packages or cloud subscriptions are needed.
@@ -45,13 +47,13 @@ Model endpoints run on the **backend machine**. A cloud machine's localhost is d
 
 ## Play
 
-- **WASD/arrows:** move Traveler in Player mode; pan the camera in Observer mode. Mouse wheel zooms, middle drag pans. Follow tracks the selected inhabitant; Reset Camera restores the map.
+- **WASD/arrows:** move Traveler in Player mode; pan the camera in Observer mode. Mouse wheel zooms, middle drag pans. Follow tracks smoothly; Focus/F centers the selection; Map/Home restores the whole map.
 - **Select any inhabitant:** click a marker or use the selector. Agent/Mind/Player/Town tabs expose needs, personality, skills, goals, active plan, private memories/knowledge, relationships, equipment, inventories and settlement state.
-- **Talk:** type any message to a selected inhabitant within three tiles. The reply is queued immediately; the world and UI remain responsive. Read persisted turns in Conversations. NPCs may question or disagree with you. Agent-initiated model-authored conversations appear there too. Offline social events are not presented as model dialogue.
+- **Send message:** type any message to a selected inhabitant within three tiles. The reply is queued immediately; the world and UI remain responsive. Read persisted turns in Conversations. NPCs may question or disagree with you. Agent-initiated model-authored conversations appear there too. Offline social events are not presented as model dialogue.
 - **Gather/Eat/Drink/Rest:** change real deposits, inventory and needs. Injured or exhausted inhabitants obtain supplies and recover without a rest/starvation deadlock. Houses/halls provide shelter and sleep destinations.
 - **Build:** choose a building type and plan a project near your home store. Build Work advances a nearby real site; materials are reserved at start. Road/bridge placement lets you click a tile. Remote roads/bridges use carried personal materials rather than teleporting settlement stock; work requires site proximity. Bridges make actual water tiles traversable.
 - **More actions:** offer an exchange, accept/reject pending offers, craft supported equipment at a workshop, store/retrieve resources, teach a skill or known claim, repair a selected building, propose council policies/group construction, or cast a council vote. Preconditions and refusal reasons appear in status. Direct trades use demand and survival reserves; an accepted explicit offer authorizes the exact exchange.
-- **Share claim:** transmits an unverified, sourced report only to the recipient. Private knowledge does not become globally known. Speaking also creates uncertain reported knowledge and individual memories. No automatic truth or obedience is implied.
+- **Share news:** transmits an unverified, sourced report only to the recipient. Private knowledge does not become globally known. Speaking also creates uncertain reported knowledge and individual memories. No automatic truth or obedience is implied.
 - **Negotiate/Retreat/Defend/Fight:** choose your response to an actual dispute. Dispute voluntarily initiates a player encounter. Health, stamina, range, equipment, witnesses, guards and watchtowers have engine-owned consequences. No gore or forced random wars.
 - **Observer controls:** pause, step, speed, inspect events, and switch modes. Reason Now requests cognition for one inhabitant. If a paused world's reasoning budget is exhausted, dialogue reports this instead of waiting forever; advance time or raise the budget.
 
@@ -87,4 +89,4 @@ Real inference checks are opt-in and fail if the selected real model cannot comp
 GENESIS_TEST_LIVE_LLM=1 python3 -m unittest discover -s tests -p test_live_llm.py -v
 ```
 
-They are explicitly skipped in normal offline CI. No desktop rendering or Windows compatibility claim is made from headless scene checks. For restricted cloud shells, `scripts/setup.sh` initializes writable XDG directories; the launcher does this automatically for Linux graphical startup.
+They are explicitly skipped in normal offline CI. Actual Godot rendering and automated mouse/keyboard input were additionally exercised under Xvfb/software OpenGL; a human desktop playtest and Windows compatibility remain unverified. For restricted cloud shells, `scripts/setup.sh` initializes writable XDG directories; the launcher does this automatically for Linux graphical startup.
