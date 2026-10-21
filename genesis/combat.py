@@ -61,12 +61,19 @@ def recover(agent, resting=False):
         agent.incapacitated = False
 
 
-def choose_response(agent, opponent):
+def choose_response(agent, opponent, tick=None):
     """Utility choices respond to health, stamina, trust, temperament and strength."""
     if agent.hp < agent.max_hp * .35 or agent.stamina < 18:
         return 'retreat'
     if agent.player:
         return agent.combat_choice
+    intent = getattr(agent, 'combat_intent', {})
+    choices = {'negotiate', 'avoid', 'retreat', 'defend', 'fight'}
+    if (tick is not None and isinstance(intent, dict)
+            and intent.get('choice') in choices
+            and isinstance(intent.get('expires'), (int, float))
+            and intent['expires'] >= tick):
+        return intent['choice']
     trust = agent.relationships.get(opponent.id, {}).get('trust', 0)
     if trust >= .15 or agent.personality['aggression'] < .35:
         return 'negotiate'
@@ -88,17 +95,24 @@ def retreat(world, agent, opponent):
 
 
 def finish(world, conflict, outcome):
+    if conflict.state != 'active':
+        return False
     conflict.state = 'resolved'
     conflict.ended = world.tick
     conflict.outcome = outcome
     for aid in (conflict.a, conflict.b):
-        world.agents[aid].defending = False
+        if aid in world.agents:
+            world.agents[aid].defending = False
     world.event('conflict_end', f'Conflict resolved: {outcome}.', [conflict.a, conflict.b], conflict=conflict.id)
+    return True
 
 
 def update(world):
     for c in list(world.conflicts.values()):
         if c.state != 'active':
+            continue
+        if c.a not in world.agents or c.b not in world.agents:
+            finish(world, c, 'participant unavailable')
             continue
         a, b = world.agents[c.a], world.agents[c.b]
         if a.incapacitated or b.incapacitated:
@@ -110,7 +124,10 @@ def update(world):
         if distance(a, b) > 8:
             finish(world, c, 'separation')
             continue
-        choices = {p.id: choose_response(p, q) for p, q in ((a, b), (b, a))}
+        choices = {p.id: choose_response(p, q, world.tick) for p, q in ((a, b), (b, a))}
+        # Set both stances before any strike; dictionary ordering must not decide armor.
+        for participant in (a, b):
+            participant.defending = choices[participant.id] in ('defend', 'negotiate')
         # A meaningful trust threshold prevents one forced conversation ending every dispute.
         if all(v in ('negotiate', 'defend') for v in choices.values()) and 'negotiate' in choices.values():
             world.relate(a, b, .12)
@@ -119,23 +136,28 @@ def update(world):
                 world.settlements[sid].stability = min(100, world.settlements[sid].stability + 2)
             finish(world, c, 'negotiated peace')
             continue
+        attacked = set()
         for actor, other in ((a, b), (b, a)):
             if actor.incapacitated or other.incapacitated:
                 break
             response = choices[actor.id]
             actor.activity = response
             actor.reason = f'{response.title()} chosen from health, stamina, trust and temperament'
-            actor.defending = response in ('defend', 'negotiate')
             if response in ('retreat', 'avoid'):
                 retreat(world, actor, other)
             elif distance(actor, other) > STRIKE_RANGE:
                 if response == 'fight':
                     world.move(actor, other.x, other.y)
-            elif response in ('fight', 'defend'):
+            elif response == 'fight':
+                if strike(world, actor, other):
+                    attacked.add(other.id)
+        # A defensive response never initiates violence. It can answer a real hit.
+        for actor, other in ((a, b), (b, a)):
+            if choices[actor.id] == 'defend' and actor.id in attacked:
                 strike(world, actor, other)
         if a.incapacitated or b.incapacitated:
             finish(world, c, 'incapacitation')
-        elif all(v in ('avoid', 'retreat', 'negotiate') for v in choices.values()):
+        elif all(v in ('avoid', 'retreat', 'negotiate', 'defend') for v in choices.values()):
             finish(world, c, 'mutual disengagement')
     active_homes = set()
     for c in world.conflicts.values():
@@ -145,5 +167,5 @@ def update(world):
         settlement.conflict = 'alert' if settlement.id in active_homes else 'peace'
         for other in world.settlements.values():
             if other.id != settlement.id:
-                cross = any(c.state == 'active' and {world.agents[c.a].home, world.agents[c.b].home} == {settlement.id, other.id} for c in world.conflicts.values())
+                cross = any(c.state == 'active' and c.a in world.agents and c.b in world.agents and {world.agents[c.a].home, world.agents[c.b].home} == {settlement.id, other.id} for c in world.conflicts.values())
                 settlement.diplomacy[other.id] = 'dispute' if cross else 'peace'
