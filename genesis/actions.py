@@ -19,7 +19,20 @@ def execute(world, command, actor_id='player', planned=False):
         return fail('Resolve or disengage from the current conflict first.')
     target = world.agents.get(command.get('target'))
     try:
+        if action=='repel':
+            from .threats import repel
+            return repel(world,a,command.get('target'))
+        if action in ('mine','fish','hunt','collect_water','plant','harvest','irrigate','fuel','extinguish','repair_equipment','gate'):
+            from .survival import action as survival_action
+            return survival_action(world,a,{**command,'_continuous':not planned})
+        if action == 'produce':
+            from .production import start
+            return start(world,a,command.get('recipe'),command.get('building'))
+        if action == 'cancel_production':
+            from .production import cancel
+            return cancel(world,a)
         if action == 'move':
+            a.extraction['auto']=False
             entity = next((collection.get(command.get('target')) for collection in
                            (world.agents, world.resources, world.buildings, world.settlements) if command.get('target') in collection), None)
             if entity and planned and entity.id != a.home and entity.id not in a.observations and entity.id not in a.property and combat.distance(a, entity) > 9:
@@ -101,6 +114,13 @@ def execute(world, command, actor_id='player', planned=False):
             a.activity = 'build'
             if b.progress >= BUILDINGS[b.kind]['duration']:
                 b.complete = True
+                if b.kind in ('wall','gate'):
+                    if any(combat.distance(person,b)<.75 for person in world.agents.values()):
+                        b.progress=BUILDINGS[b.kind]['duration']-.1
+                        b.complete=False
+                        return fail('Move occupants clear before completing this barrier')
+                    world._paths.clear()
+                    world._blocked_tick=-1
                 if b.kind in ('road', 'bridge'):
                     world.terrain[round(b.y)][round(b.x)] = 'road'
                 world.stats['built'] += 1

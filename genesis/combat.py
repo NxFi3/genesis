@@ -5,6 +5,9 @@ EQUIPMENT = {
     'staff': {'attack': 4, 'defense': 1, 'weight': 1},
     'shield': {'attack': 0, 'defense': 5, 'weight': 2},
     'padded_coat': {'attack': 0, 'defense': 3, 'weight': 1},
+    'iron_blade': {'attack':6,'defense':0,'weight':2},
+    'wool_coat': {'attack':0,'defense':1,'weight':1},
+    'leather_coat': {'attack':0,'defense':3,'weight':1},
     'boots': {'attack': 0, 'defense': 0, 'weight': 0, 'speed': .15},
 }
 STRIKE_COST = 12
@@ -16,7 +19,7 @@ def distance(a, b):
 
 
 def attributes(agent, key):
-    return sum(EQUIPMENT.get(item, {}).get(key, 0) for item in agent.equipment)
+    return sum(EQUIPMENT.get(item, {}).get(key, 0)*max(0,agent.equipment_condition.get(item,100))/100 for item in agent.equipment)
 
 
 def damage(attacker, defender):
@@ -34,6 +37,9 @@ def strike(world, attacker, defender):
             attacker.stamina < STRIKE_COST or distance(attacker, defender) > STRIKE_RANGE):
         return False
     amount = damage(attacker, defender)
+    for actor in (attacker,defender):
+        for item in actor.equipment:
+            actor.equipment_condition[item]=max(0,actor.equipment_condition.get(item,100)-.2)
     # A completed watchtower protects defenders in its immediate settlement area.
     tower = world.buildings.get(f'{defender.home}_watchtower')
     if tower and tower.complete and distance(defender, tower) <= 4:

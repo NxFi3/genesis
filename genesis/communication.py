@@ -28,6 +28,8 @@ def opportunities(world, agent, limit=3):
             topic, reason, score = 'trade offer', f'Discuss pending offer {offers[-1]["id"]}; acceptance is voluntary.', 9
         elif relationship.get('rivalry', 0) > .2:
             topic, reason, score = 'disagreement', 'You remember unresolved rivalry; consider clarification, distance or a peaceful discussion.', 7
+        elif agent.observations.get('climate',{}).get('drought',0)>.5 or agent.observations.get('climate',{}).get('temperature',20)<0:
+            topic,reason,score='local weather','You observed difficult local weather; consider asking about water, shelter, fuel or cooperation.',6
         elif other.home != agent.home:
             topic, reason, score = 'cross-settlement contact', f'A visitor from {world.settlements[other.home].name} is within speaking distance; ask about needs without assuming their stocks.', 6
         elif projects:

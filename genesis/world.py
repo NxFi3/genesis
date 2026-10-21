@@ -8,6 +8,8 @@ import re
 
 from .models import Agent, Settlement, Resource, Building, Wildlife, Conflict
 from . import combat
+from . import environment, registry, survival, production, threats
+from .worldsystems import BUILDING_TYPES, initialize
 
 BUILDINGS = {
     'house': {'wood': 12, 'stone': 4, 'duration': 12, 'shelter': 6},
@@ -21,6 +23,7 @@ BUILDINGS = {
     'hall': {'wood': 20, 'stone': 12, 'duration': 20, 'shelter': 10, 'social': 1},
     'well': {'wood': 8, 'stone': 15, 'duration': 15, 'water': 3},
 }
+BUILDINGS.update(BUILDING_TYPES)
 RECIPES = {
     'tools': {'inputs': {'wood': 2, 'metal': 1}, 'output': 1, 'skill': 'craft'},
     'staff': {'inputs': {'wood': 3, 'tools': 1}, 'equipment': True, 'skill': 'craft'},
@@ -37,6 +40,8 @@ class World:
             raise ValueError('population must be 1..100; world at least 32 by 24')
         self.seed, self.width, self.height = seed, width, height
         self.rng = random.Random(seed)
+        self.climate = environment.initial()
+        self.crops, self.fires, self.production_jobs, self.gates, self.threats = {}, {}, {}, {}, {}
         self.tick = 0
         self.agents, self.settlements, self.resources, self.buildings = {}, {}, {}, {}
         self.wildlife, self.conflicts, self.events = {}, {}, []
@@ -52,19 +57,19 @@ class World:
         self.event_sink = None
         self._paths = {}
         self._generate(population)
+        initialize(self,new=True)
 
     @property
     def season(self):
-        return ('spring', 'summer', 'autumn', 'winter')[(self.tick // 250) % 4]
+        return self.climate.get('season_override') or ('spring', 'summer', 'autumn', 'winter')[(self.tick // 250) % 4]
 
     @property
     def hour(self):
-        return (self.tick % 240) / 10
+        return ((self.tick % 240)/10+self.climate.get('clock_offset',0))%24
 
     @property
     def weather(self):
-        # Weather is deterministic from seed and day, without consuming decision RNG.
-        return ('clear', 'rain', 'clear', 'wind', 'clear', 'drought')[(self.seed + self.tick // 120) % 6]
+        return environment.conditions(self)['weather']
 
     @property
     def daylight(self):
@@ -134,7 +139,11 @@ class World:
 
     def passable(self, x, y):
         ix, iy = round(x), round(y)
-        return 0 <= ix < self.width and 0 <= iy < self.height and self.terrain[iy][ix] in PASSABLE
+        if not (0 <= ix < self.width and 0 <= iy < self.height and self.terrain[iy][ix] in PASSABLE): return False
+        if getattr(self,'_blocked_tick',-1)!=self.tick:
+            self._blocked_cells={(round(b.x),round(b.y)) for b in self.buildings.values() if b.complete and b.condition>0 and (b.kind=='wall' or b.kind=='gate' and not self.gates.get(b.id,True))}
+            self._blocked_tick=self.tick
+        return (ix,iy) not in self._blocked_cells
 
     def neighbors(self, x, y):
         x, y = round(x), round(y)
@@ -189,8 +198,8 @@ class World:
         factor = PASSABLE[self.terrain[step[1]][step[0]]]
         weight = max(.5, 1-combat.attributes(a, 'weight')*.03)
         speed = max(.05, (a.speed+combat.attributes(a, 'speed'))*factor*weight)
-        if self.weather == 'rain' and self.terrain[step[1]][step[0]] != 'road':
-            speed *= .85
+        if self.terrain[step[1]][step[0]] != 'road':
+            speed *= environment.conditions(self,a.x,a.y)['travel_factor']
         amount = min(dist, speed, a.stamina/(2 if retreating else 1))
         if dist:
             a.x += dx/dist*amount
@@ -262,16 +271,17 @@ class World:
             return False
         s = self.settlements[agent.home]
         nearby_store = combat.distance(agent, s) <= 2
-        if not nearby_store and kind not in ('road', 'bridge'):
+        if not nearby_store and kind not in ('road', 'bridge','wall','gate','campfire','mine'):
             return False
         materials = s.inventory if nearby_store else agent.inventory
         bid = f'{s.id}_{kind}'
         if bid in self.buildings:
-            if kind not in ('house', 'storage', 'road', 'bridge'):
+            if kind not in ('house', 'storage', 'road', 'bridge','wall','gate','campfire','rain_collector'):
                 return False
             bid = f'{bid}_{sum(b.home == s.id and b.kind == kind for b in self.buildings.values())}'
         if x is None or y is None:
-            candidates = [(s.x+dx, s.y+dy) for dx, dy in ((1,1), (-1,1), (1,-1), (-1,-1), (2,0), (0,2), (-2,0), (0,-2))]
+            anchor=s if nearby_store else agent
+            candidates = [(round(anchor.x)+dx, round(anchor.y)+dy) for dx, dy in ((1,1), (-1,1), (1,-1), (-1,-1), (2,0), (0,2), (-2,0), (0,-2))]
             occupied = {(b.x, b.y) for b in self.buildings.values()}
             position = next((p for p in candidates if self.passable(*p) and p not in occupied), None)
             if position is None:
@@ -287,6 +297,7 @@ class World:
                 return False
         elif not self.passable(x, y):
             return False
+        if kind in ('wall','gate') and any(hypot(a.x-x,a.y-y)<.75 for a in self.agents.values()): return False
         if any(b.x == x and b.y == y for b in self.buildings.values()):
             return False
         recipe = BUILDINGS[kind]
@@ -295,6 +306,7 @@ class World:
         for k, v in recipe.items():
             if k in materials:
                 materials[k] -= v
+        self._paths.clear()
         self.buildings[bid] = Building(bid, kind, s.id, x, y)
         if not nearby_store:
             agent.property.append(bid)
@@ -307,6 +319,8 @@ class World:
     def transfer(self, source, destination, kind, amount):
         if kind not in source or kind not in destination or not math.isfinite(amount) or amount <= 0 or source[kind] < amount:
             return False
+        recipient=next((a for a in self.agents.values() if a.inventory is destination),None)
+        if recipient and registry.room(recipient,kind)+1e-9<amount: return False
         source[kind] -= amount
         destination[kind] += amount
         return True
@@ -326,8 +340,12 @@ class World:
             value_out = 1/(1+b.inventory[wanted])
             if value_in < value_out*.5:
                 return False
-        self.transfer(a.inventory, b.inventory, offered, amount)
-        self.transfer(b.inventory, a.inventory, wanted, amount)
+        for person,give,take in ((a,offered,wanted),(b,wanted,offered)):
+            resulting=registry.mass(person.inventory)+amount*(registry.RESOURCES[take]['mass']-registry.RESOURCES[give]['mass'])
+            if resulting>person.carry_capacity+1e-9: return False
+        # Both net capacities and stocks passed: commit the paired exchange atomically.
+        a.inventory[offered]-=amount; b.inventory[offered]+=amount
+        b.inventory[wanted]-=amount; a.inventory[wanted]+=amount
         self.stats['traded'] += amount * 2
         at_market = any(building.kind == 'market' and building.complete and combat.distance(a, building) <= 3 and combat.distance(b, building) <= 3 for building in self.buildings.values())
         self.relate(a, b, .05 if at_market else .03)
@@ -336,6 +354,13 @@ class World:
         return True
 
     def _consume(self, a, kind, need):
+        if kind=='food':
+            edible=[k for k,v in registry.RESOURCES.items() if v['nutrition']>0 and k!='food' and a.inventory.get(k,0)>=1]
+            if edible:
+                chosen=max(edible,key=lambda k:registry.RESOURCES[k]['nutrition'])
+                a.inventory[chosen]-=1; a.hunger=max(0,a.hunger-registry.RESOURCES[chosen]['nutrition'])
+                a.activity='eat'; self.stats['consumed']+=1
+                self.event('eat',f'{a.name} consumed {chosen}.',[a.id]); return True
         if a.inventory[kind] >= 1:
             a.inventory[kind] -= 1
             setattr(a, need, max(0, getattr(a, need) - 38))
@@ -346,14 +371,30 @@ class World:
         s = self.settlements[a.home]
         sharing = self.governance.get(s.id, {}).get('sharing', True)
         if combat.distance(a, s) <= 2 and s.inventory[kind] >= 1 and (sharing or a.id in s.council or getattr(a, need) > 75):
-            self.transfer(s.inventory, a.inventory, kind, 1)
-            return self._consume(a, kind, need)
+            if self.transfer(s.inventory,a.inventory,kind,1):
+                return self._consume(a,kind,need)
+            # A full pack does not prevent eating/drinking directly at the communal store.
+            s.inventory[kind]-=1
+            setattr(a,need,max(0,getattr(a,need)-38))
+            self.stats['consumed']+=1
+            a.activity='eat' if kind=='food' else 'drink'
+            self.event(a.activity,f'{a.name} consumed {kind} at the home store.',[a.id])
+            return True
+        if kind=='water':
+            source=next((r for r in self.resources.values() if r.kind=='water' and r.quantity>=1 and combat.distance(a,r)<=1.6),None)
+            if source:
+                source.quantity-=1
+                a.thirst=max(0,a.thirst-38);a.activity='drink';self.stats['consumed']+=1
+                self.event('drink',f'{a.name} drank at a local water reserve.',[a.id],source=source.id)
+                return True
         return False
 
     def gather(self, a, r):
         if a.incapacitated or combat.distance(a, r) > 1.6 or a.stamina < 4 or r.quantity <= 0:
             return False
-        amount = min(3 + a.skills['gather'] * .2, r.quantity)
+        if r.kind in registry.MINERALS or r.kind=='fish': return False
+        amount = min(3 + a.skills['gather'] * .2, r.quantity, registry.room(a,r.kind))
+        if amount<=0: return False
         r.quantity -= amount
         a.inventory[r.kind] += amount
         a.stamina -= 4
@@ -404,6 +445,7 @@ class World:
                 a.fatigue = max(0, a.fatigue-3)
                 a.shelter = max(0, a.shelter-8)
             return
+        if survival.emergency(self,a): return
         if any(c.get('state') == 'active' and a.id in c.get('participants', []) and self.tick-c.get('updated', self.tick) <= 150 for c in self.conversations.values()):
             a.activity, a.reason = 'converse', 'Listening to a nearby conversation; survival still takes priority'
             a.social = max(0, a.social-.5)
@@ -414,14 +456,15 @@ class World:
         from .social import work_commitments
         if work_commitments(self, a):
             return
+        if production.autonomous(self,a): return
+        if survival.autonomous(self,a): return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
         if injured:
             assisted = False
             for kind, need in (('food', 'hunger'), ('water', 'thirst')):
                 if getattr(injured, need) > 45 and a.inventory[kind] >= 1:
-                    self.transfer(a.inventory, injured.inventory, kind, 1)
-                    self._consume(injured, kind, need)
-                    assisted = True
+                    if self.transfer(a.inventory,injured.inventory,kind,1):
+                        assisted=self._consume(injured,kind,need) or assisted
             if assisted:
                 a.activity, a.reason = 'help', 'Providing supplies to an incapacitated neighbor'
                 self.relate(injured, a, .05)
@@ -526,7 +569,10 @@ class World:
         if candidates:
             r = max(candidates, key=utility)
             a.reason = f'Gathering {r.kind}: supply, distance and carried stock'
-            if not self.gather(a, r):
+            if r.kind in registry.MINERALS:
+                if combat.distance(a,r)>2: self.move(a,r.x,r.y)
+                else: survival.action(self,a,{'action':'mine','resource':r.id})
+            elif not self.gather(a, r):
                 self.move(a, r.x, r.y)
 
     def _ecology(self):
@@ -546,7 +592,12 @@ class World:
                     growth_factor = .2 if age < 90 else (1 if age < 210 else 0)
                 else:
                     growth['stage'] = 'seedling' if r.quantity < r.capacity*.1 else ('growing' if r.quantity < r.capacity*.7 else 'mature')
-            amount = max(0, min(r.capacity-r.quantity, r.regeneration*factor*growth_factor))
+            env=environment.conditions(self,r.x,r.y)
+            local_factor=(.25 if self.season=='winter' else 1)*(1-env['drought']*.8)
+            if r.kind=='water':
+                local_factor=env['water_recharge']
+                r.quantity=max(0,r.quantity-env['drought']*.15)
+            amount = max(0, min(r.capacity-r.quantity, r.regeneration*local_factor*growth_factor))
             r.quantity += amount
             self.stats['produced'] += amount
         if self.tick % 10 == 0:
@@ -556,11 +607,16 @@ class World:
                 s = self.settlements[b.home]
                 if b.kind in ('road', 'bridge'):
                     self.terrain[round(b.y)][round(b.x)] = 'road'
-                if b.kind == 'farm':
+                if b.kind == 'farm' and b.id not in self.crops:
                     from .technology import modifier
-                    amount = min(5*factor*max(.1, b.condition/100)*modifier(self, s.id, 'farm_yield'), max(0, self.capacity(s)-sum(s.inventory.values())))
+                    local_env=environment.conditions(self,b.x,b.y)
+                    amount = min(5*factor*max(.1,local_env['moisture'])*(1-local_env['drought']*.8)*max(.1, b.condition/100)*modifier(self, s.id, 'farm_yield'), max(0, self.capacity(s)-sum(s.inventory.values())))
                     s.inventory['food'] += amount
                     self.stats['produced'] += amount
+                if b.kind == 'rain_collector':
+                    env=environment.conditions(self,b.x,b.y)
+                    rain=max(0,env['precipitation']-env['snow'])*3
+                    s.inventory['water']+=min(rain,max(0,self.capacity(s)-sum(s.inventory.values())))
                 if b.kind == 'well':
                     source = min((r for r in self.resources.values() if r.kind == 'water' and combat.distance(b, r) <= 10), key=lambda r: combat.distance(b, r), default=None)
                     if source:
@@ -574,6 +630,8 @@ class World:
                     s.inventory['tools'] += 1
                     self.event('craft', f'{s.name} crafted a tool.', [])
         for animal in list(self.wildlife.values()):
+            animal.age+=1
+            animal.hunger=min(100,animal.hunger+.05)
             if animal.hp <= 0:
                 animal.activity = 'incapacitated'
                 continue
@@ -600,7 +658,11 @@ class World:
                 if self.tick % 8 == 0:
                     options = self.neighbors(animal.x, animal.y)
                     if options:
-                        animal.x, animal.y = self.rng.choice(options)
+                        preferred=[p for p in options if self.terrain[p[1]][p[0]] in (('forest','mountain') if animal.species=='wolf' else ('plains','farmland','forest'))]
+                        animal.x, animal.y = self.rng.choice(preferred or options)
+                        food=next((r for r in self.resources.values() if r.kind in ('food','vegetables') and r.quantity>=.1 and combat.distance(animal,r)<2),None)
+                        if food and animal.hunger>20:
+                            food.quantity-=.1; animal.hunger=max(0,animal.hunger-10)
 
     def _institutions(self):
         # Council decisions are votes with material effects. No policy changes without
@@ -792,7 +854,9 @@ class World:
             raise ValueError('Tick count must be an integer in 0..100000')
         for _ in range(count):
             self.tick += 1
+            environment.update(self)
             self._ecology()
+            survival.update(self)
             combat.update(self)
             self._institutions()
             for a in self.agents.values():
@@ -809,6 +873,9 @@ class World:
                     a.incapacitated = a.hp <= 0
                 if not self.active(a.id):
                     if a.player:
+                        if a.extraction.get('auto'):
+                            outcome=survival.action(self,a,{'action':a.extraction['action'],'resource':a.extraction['target'],'_continuous':True})
+                            if not outcome['ok'] or not outcome.get('pending'): a.extraction['auto']=False
                         combat.recover(a, a.activity in ('rest', 'sleep') or a.incapacitated)
                     else:
                         shipment = next((s for s in self.shipments.values() if s['courier'] == a.id and s['state'] in ('in_transit', 'returning')), None)
@@ -829,13 +896,15 @@ class World:
                         if b.id != a.id and combat.distance(a, b) < 2 and a.relationships.get(b.id, {}).get('trust', 0) < -.35 and a.hunger > 55:
                             self.start_conflict(a.id, b.id, 'scarcity and unresolved rivalry')
                             break
+            production.update(self)
+            threats.update(self)
             if self.tick % 50 == 0:
                 for s in self.settlements.values():
                     s.stability = min(100, s.stability + .5) if s.conflict == 'peace' else max(0, s.stability-.2)
 
     def snapshot(self, full=False):
-        result = {'version': 1, 'seed': self.seed, 'width': self.width, 'height': self.height, 'tick': self.tick, 'season': self.season,
-                  'terrain': self.terrain, 'stats': self.stats, 'next_event': self.next_event, 'hour': self.hour, 'weather': self.weather, 'daylight': self.daylight,
+        result = {'version': 2, 'seed': self.seed, 'width': self.width, 'height': self.height, 'tick': self.tick, 'season': self.season,
+                  'terrain': self.terrain, 'elevation':self.elevation,'climate':self.climate,'crops':self.crops,'fires':self.fires,'production_jobs':self.production_jobs,'gates':self.gates,'threats':self.threats, 'environment':{sid:{**environment.conditions(self,region=sid),'water_reserve':round(sum(r.quantity for r in self.resources.values() if r.kind=='water' and environment.region_at(self,r.x,r.y)==sid),2)} for sid in self.settlements},'catalogue':{'resources':registry.RESOURCES,'recipes':registry.PRODUCTION,'buildings':BUILDINGS}, 'stats': self.stats, 'next_event': self.next_event, 'hour': self.hour, 'weather': self.weather, 'daylight': self.daylight,
                   'conversations': self.conversations, 'agreements': self.agreements, 'cognition_config': self.cognition_config, 'governance': self.governance, 'proposals': self.proposals, 'shipments': self.shipments, 'resource_growth': self.resource_growth, 'next_conflict': self.next_conflict, 'next_shipment': self.next_shipment, 'paths': {k: [list(v[0]), [list(p) for p in v[1]]] for k, v in self._paths.items()}}
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
@@ -846,7 +915,7 @@ class World:
 
     @classmethod
     def from_snapshot(cls, data):
-        if data.get('version') != 1:
+        if data.get('version') not in (1,2):
             raise ValueError('Unsupported save version')
         w = cls.__new__(cls)
         for name in ('seed', 'width', 'height', 'tick', 'terrain', 'stats', 'next_event', 'events'):
@@ -864,5 +933,8 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
+        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats'):
+            if name in data: setattr(w,name,data[name])
+        initialize(w)
         from .validation import validate_world
         return validate_world(w)

@@ -2,6 +2,7 @@
 import json
 import re
 from .combat import distance
+from .environment import conditions
 
 
 def remember(agent, tick, text, source, importance=1, confidence=1):
@@ -41,7 +42,7 @@ def perceive(world, agent):
     # Geography may be remembered, resource quantities are explicitly old observations.
     agent.observations = dict(list(agent.observations.items())[-80:])
     return {'location': [round(agent.x, 2), round(agent.y, 2)], 'tick': world.tick,
-            'season': world.season, 'day_phase': 'day' if world.daylight else 'night', 'weather': world.weather,
+            'climate': conditions(world,agent.x,agent.y), 'season': world.season, 'day_phase': 'day' if world.daylight else 'night', 'weather': world.weather,
             'nearby_agents': [{'id': a.id, 'name': a.name, 'home': a.home, 'activity': a.activity,
                                'x': round(a.x, 2), 'y': round(a.y, 2)} for a in nearby],
             'resources': [x for key, x in agent.observations.items() if key in world.resources],
@@ -61,8 +62,8 @@ def context(world, agent, query='', limit=12000, partner_id=None):
     relations = sorted(agent.relationships.items(), key=lambda pair: (pair[0] == partner_id, pair[0] in nearby_ids, pair[1].get('familiarity', 0)), reverse=True)[:8]
     state = {'identity': {'id': agent.id, 'name': agent.name, 'personality': agent.personality,
                           'occupation': agent.occupation, 'skills': agent.skills},
-             'needs': {k: getattr(agent, k) for k in ('hp', 'stamina', 'hunger', 'thirst', 'fatigue', 'shelter', 'safety', 'social')},
-             'inventory': agent.inventory, 'equipment': agent.equipment, 'perception': perception,
+             'needs': {k: getattr(agent, k) for k in ('hp', 'stamina', 'hunger', 'thirst', 'fatigue', 'warmth', 'shelter', 'safety', 'social')},
+             'inventory': agent.inventory, 'carry_capacity':agent.carry_capacity, 'production_job':world.production_jobs.get(agent.production_job), 'equipment': agent.equipment, 'perception': perception,
              'knowledge': relevant, 'relationships': dict(relations),
              'semantic_memory': sorted(agent.semantic_memory, key=rank, reverse=True)[:3],
              'projects': [b for b in perception['buildings'] if not b['complete']],

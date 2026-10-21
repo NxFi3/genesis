@@ -38,6 +38,11 @@ class Agent:
     shelter: float = 0
     safety: float = 0
     social: float = 15
+    warmth: float = 10
+    carry_capacity: float = 120
+    extraction: dict = field(default_factory=dict)
+    production_job: str | None = None
+    equipment_condition: dict = field(default_factory=dict)
     plan: list = field(default_factory=list)
     plan_index: int = 0
     plan_status: str = 'idle'
@@ -81,6 +86,7 @@ class Resource:
     quantity: float
     capacity: float
     regeneration: float = 0
+    source: str = ''
 
 
 @dataclass
@@ -105,6 +111,9 @@ class Wildlife:
     species: str = 'deer'
     activity: str = 'graze'
     threat: str | None = None
+    harvested: bool = False
+    age: int = 0
+    hunger: float = 0
 
 
 @dataclass

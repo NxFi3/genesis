@@ -34,7 +34,7 @@ def save(world, path, slot='world', pending=()):
     state = json.dumps(world.snapshot(True), allow_nan=False)
     with sqlite3.connect(path, timeout=10) as db:
         db.executescript(SCHEMA)
-        db.execute('INSERT OR REPLACE INTO saves(slot,version,tick,state) VALUES(?,?,?,?)', (slot, 1, world.tick, state))
+        db.execute('INSERT OR REPLACE INTO saves(slot,version,tick,state) VALUES(?,?,?,?)', (slot, 2, world.tick, state))
         # Loading an older snapshot discards only its abandoned future, not prior archive.
         db.execute('DELETE FROM history WHERE slot=? AND event_id>=?', (slot, world.next_event))
         db.executemany('INSERT OR REPLACE INTO history VALUES(?,?,?,?,?)', _rows([*world.events, *pending], slot))

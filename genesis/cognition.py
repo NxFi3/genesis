@@ -15,6 +15,7 @@ from . import combat
 from .memory import context, remember
 from .planning import SCHEMAS, validate_plan, adopt_plan
 from .providers import InferenceConfig, generate
+from .registry import PRODUCTION
 from .social import hear, upkeep
 from .communication import opportunities, dialogue_context
 
@@ -179,7 +180,7 @@ class Scheduler:
         from .world import BUILDINGS, RECIPES
         from .technology import TECHNOLOGIES
         data = {'reason': reason, 'agent': private, 'action_schemas': SCHEMAS,
-                'capabilities': {'building_costs': {kind: {k: v for k, v in recipe.items() if k in agent.inventory or k == 'duration'} for kind, recipe in BUILDINGS.items()}, 'recipes': RECIPES, 'practical_methods': TECHNOLOGIES},
+                'capabilities': {'building_costs': {kind: {k: v for k, v in recipe.items() if k in agent.inventory or k == 'duration'} for kind, recipe in BUILDINGS.items()}, 'recipes': RECIPES, 'practical_methods': TECHNOLOGIES, 'production_recipes':PRODUCTION},
                 'pending_offers': [x for x in world.agreements.values() if x['state'] == 'proposed' and aid in (x['proposer'], x['recipient'])][-6:]}
         if c:
             data['conversation'] = dialogue_context(world, agent, c)
@@ -397,7 +398,7 @@ class Scheduler:
                     continue
                 seen = self.events_seen.get(agent.id, 0)
                 important = any(e['id'] > seen and agent.id in e['actors'] and e['kind'] in
-                                ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision') for e in world.events[-80:])
+                                ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision','environment_observed','production_completed','threat_observed') for e in world.events[-80:])
                 if world.events:
                     self.events_seen[agent.id] = world.events[-1]['id']
                 # Conversation turns have their own priority and should not trigger unrelated reflection loops.

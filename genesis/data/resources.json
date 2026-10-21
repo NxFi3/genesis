@@ -1,0 +1,656 @@
+{
+  "version": 1,
+  "resources": {
+    "iron_ore": {
+      "id": "iron_ore",
+      "name": "Iron Ore",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "copper_ore": {
+      "id": "copper_ore",
+      "name": "Copper Ore",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "gold_ore": {
+      "id": "gold_ore",
+      "name": "Gold Ore",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "silver_ore": {
+      "id": "silver_ore",
+      "name": "Silver Ore",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "coal": {
+      "id": "coal",
+      "name": "Coal",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "stone": {
+      "id": "stone",
+      "name": "Stone",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "clay": {
+      "id": "clay",
+      "name": "Clay",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "sand": {
+      "id": "sand",
+      "name": "Sand",
+      "category": "mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "deposit",
+        "mining"
+      ]
+    },
+    "wood": {
+      "id": "wood",
+      "name": "Wood",
+      "category": "natural",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "gather",
+        "trade"
+      ]
+    },
+    "plant_fiber": {
+      "id": "plant_fiber",
+      "name": "Plant Fiber",
+      "category": "natural",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "gather",
+        "trade"
+      ]
+    },
+    "seeds": {
+      "id": "seeds",
+      "name": "Seeds",
+      "category": "natural",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "gather",
+        "trade"
+      ]
+    },
+    "hides": {
+      "id": "hides",
+      "name": "Hides",
+      "category": "natural",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "gather",
+        "trade"
+      ]
+    },
+    "wool": {
+      "id": "wool",
+      "name": "Wool",
+      "category": "natural",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "gather",
+        "trade"
+      ]
+    },
+    "planks": {
+      "id": "planks",
+      "name": "Planks",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "bricks": {
+      "id": "bricks",
+      "name": "Bricks",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "charcoal": {
+      "id": "charcoal",
+      "name": "Charcoal",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "iron_ingot": {
+      "id": "iron_ingot",
+      "name": "Iron Ingot",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "copper_ingot": {
+      "id": "copper_ingot",
+      "name": "Copper Ingot",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "gold_ingot": {
+      "id": "gold_ingot",
+      "name": "Gold Ingot",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "silver_ingot": {
+      "id": "silver_ingot",
+      "name": "Silver Ingot",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "tools": {
+      "id": "tools",
+      "name": "Tools",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "equipment": {
+      "id": "equipment",
+      "name": "Equipment",
+      "category": "processed",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "production",
+        "trade"
+      ]
+    },
+    "wheat": {
+      "id": "wheat",
+      "name": "Wheat",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.0004,
+      "nutrition": 10,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "vegetables": {
+      "id": "vegetables",
+      "name": "Vegetables",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.002,
+      "nutrition": 24,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "fruit": {
+      "id": "fruit",
+      "name": "Fruit",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.002,
+      "nutrition": 22,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "raw_meat": {
+      "id": "raw_meat",
+      "name": "Raw Meat",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.008,
+      "nutrition": 0,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "cooked_meat": {
+      "id": "cooked_meat",
+      "name": "Cooked Meat",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.002,
+      "nutrition": 45,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "fish": {
+      "id": "fish",
+      "name": "Fish",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.006,
+      "nutrition": 0,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "bread": {
+      "id": "bread",
+      "name": "Bread",
+      "category": "food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0.001,
+      "nutrition": 40,
+      "sources": [
+        "harvest",
+        "gather",
+        "hunt",
+        "fish",
+        "production"
+      ]
+    },
+    "food": {
+      "id": "food",
+      "name": "Food",
+      "category": "legacy_food",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 38,
+      "sources": [
+        "gather",
+        "legacy_farm"
+      ]
+    },
+    "water": {
+      "id": "water",
+      "name": "Drinking water",
+      "category": "water",
+      "unit": "unit",
+      "mass": 1,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "collection",
+        "well",
+        "rain_collector"
+      ]
+    },
+    "metal": {
+      "id": "metal",
+      "name": "Metal",
+      "category": "legacy_mineral",
+      "unit": "unit",
+      "mass": 2,
+      "spoilage": 0,
+      "nutrition": 0,
+      "sources": [
+        "legacy_deposit"
+      ]
+    }
+  },
+  "recipes": {
+    "smelt_iron": {
+      "id": "smelt_iron",
+      "inputs": {
+        "iron_ore": 2,
+        "coal": 1
+      },
+      "outputs": {
+        "iron_ingot": 1
+      },
+      "duration": 12,
+      "facilities": [
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "smelt_copper": {
+      "id": "smelt_copper",
+      "inputs": {
+        "copper_ore": 2,
+        "coal": 1
+      },
+      "outputs": {
+        "copper_ingot": 1
+      },
+      "duration": 12,
+      "facilities": [
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "smelt_gold": {
+      "id": "smelt_gold",
+      "inputs": {
+        "gold_ore": 2,
+        "coal": 1
+      },
+      "outputs": {
+        "gold_ingot": 1
+      },
+      "duration": 12,
+      "facilities": [
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "smelt_silver": {
+      "id": "smelt_silver",
+      "inputs": {
+        "silver_ore": 2,
+        "coal": 1
+      },
+      "outputs": {
+        "silver_ingot": 1
+      },
+      "duration": 12,
+      "facilities": [
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "planks": {
+      "id": "planks",
+      "inputs": {
+        "wood": 2
+      },
+      "outputs": {
+        "planks": 3
+      },
+      "duration": 6,
+      "facilities": [
+        "carpenter",
+        "workshop"
+      ],
+      "skill": "craft"
+    },
+    "bricks": {
+      "id": "bricks",
+      "inputs": {
+        "clay": 3,
+        "charcoal": 1
+      },
+      "outputs": {
+        "bricks": 2
+      },
+      "duration": 10,
+      "facilities": [
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "charcoal": {
+      "id": "charcoal",
+      "inputs": {
+        "wood": 3
+      },
+      "outputs": {
+        "charcoal": 2
+      },
+      "duration": 8,
+      "facilities": [
+        "hearth",
+        "campfire",
+        "furnace"
+      ],
+      "skill": "craft"
+    },
+    "bread": {
+      "id": "bread",
+      "inputs": {
+        "wheat": 2,
+        "water": 1,
+        "wood": 1
+      },
+      "outputs": {
+        "bread": 2
+      },
+      "duration": 8,
+      "facilities": [
+        "hearth",
+        "campfire"
+      ],
+      "skill": "craft"
+    },
+    "cook_meat": {
+      "id": "cook_meat",
+      "inputs": {
+        "raw_meat": 2,
+        "wood": 1
+      },
+      "outputs": {
+        "cooked_meat": 2
+      },
+      "duration": 6,
+      "facilities": [
+        "hearth",
+        "campfire"
+      ],
+      "skill": "craft"
+    },
+    "cook_fish": {
+      "id": "cook_fish",
+      "inputs": {
+        "fish": 2,
+        "wood": 1
+      },
+      "outputs": {
+        "cooked_meat": 2
+      },
+      "duration": 6,
+      "facilities": [
+        "hearth",
+        "campfire"
+      ],
+      "skill": "craft"
+    },
+    "refined_tools": {
+      "id": "refined_tools",
+      "inputs": {
+        "iron_ingot": 1,
+        "planks": 2
+      },
+      "outputs": {
+        "tools": 2
+      },
+      "duration": 10,
+      "facilities": [
+        "blacksmith"
+      ],
+      "skill": "craft"
+    },
+    "iron_blade": {
+      "id": "iron_blade",
+      "inputs": {
+        "iron_ingot": 2,
+        "planks": 1
+      },
+      "outputs": {},
+      "duration": 15,
+      "facilities": [
+        "blacksmith"
+      ],
+      "skill": "craft",
+      "equipment": "iron_blade"
+    },
+    "wool_coat": {
+      "id": "wool_coat",
+      "inputs": {
+        "wool": 3,
+        "plant_fiber": 2
+      },
+      "outputs": {},
+      "duration": 10,
+      "facilities": [
+        "workshop"
+      ],
+      "skill": "craft",
+      "equipment": "wool_coat"
+    },
+    "leather_coat": {
+      "id": "leather_coat",
+      "inputs": {
+        "hides": 3,
+        "plant_fiber": 2
+      },
+      "outputs": {},
+      "duration": 10,
+      "facilities": [
+        "workshop"
+      ],
+      "skill": "craft",
+      "equipment": "leather_coat"
+    }
+  }
+}

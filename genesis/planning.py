@@ -8,7 +8,7 @@ SCHEMAS = {
     'gather': {'resource': 'resource id in perception'},
     'store': {'kind': 'resource name', 'amount': 'positive number'},
     'retrieve': {'kind': 'resource name', 'amount': 'positive number'},
-    'build': {'kind': 'house/farm/workshop/storage/market/watchtower/road/bridge/well/hall', 'x': 'optional site x', 'y': 'optional site y'},
+    'build': {'kind': 'supported building id from building_costs, including furnace/blacksmith/mine/campfire/wall/gate', 'x': 'optional site x', 'y': 'optional site y'},
     'work': {'building': 'optional building id'},
     'repair': {'building': 'building id'},
     'craft': {'item': 'supported equipment or tools recipe'},
@@ -28,6 +28,23 @@ SCHEMAS = {
     'shipment': {'destination': 'settlement id', 'offered': 'resource', 'wanted': 'resource', 'amount': 'positive number'},
     'conflict_response': {'target': 'opponent id', 'choice': 'negotiate/avoid/retreat/defend/fight'},
 }
+SCHEMAS.update({
+    'repel': {'target':'nearby observed optional fantasy threat id'},
+    'mine': {'resource':'visible finite mineral deposit id'},
+    'fish': {'resource':'nearby fish habitat stock id'},
+    'hunt': {'target':'nearby wildlife id; non-graphic deterministic hunting'},
+    'collect_water': {'resource':'nearby environmental water reserve id'},
+    'produce': {'recipe':'catalogue production recipe id', 'building':'optional nearby compatible home facility'},
+    'cancel_production': {},
+    'plant': {'building':'completed home farm id','crop':'wheat/vegetables'},
+    'harvest': {'building':'mature home farm id'},
+    'irrigate': {'building':'home farm id','amount':'owned water units, up to three'},
+    'fuel': {'building':'completed home campfire/hearth','kind':'wood/coal/charcoal','amount':'positive owned units up to five'},
+    'extinguish': {'building':'nearby home fire id'},
+    'repair_equipment': {'item':'owned equipment id; consumes tool at workshop'},
+    'gate': {'building':'nearby completed home gate','open':'boolean'},
+})
+
 
 
 def validate_plan(data):

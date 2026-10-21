@@ -13,3 +13,11 @@ Milestone checks and final limits will be recorded as they run. No real-model, n
 ## Milestone 2 — orthographic 3D foundation
 
 Implemented a SubViewport-based Godot 3D diorama with original reusable low-poly asset generators, shared meshes/materials, batched vegetation, terrain surfaces/elevation, buildings, animated figures, animals, projected picking and camera focus/pan/zoom. Existing polished inspector/journal/settings remain in place. `--flat` preserves the previous validated top-down renderer. Actual Xvfb/Mesa screenshots exposed and corrected terrain face culling; import and live-backend smoke passed. A new synthetic isometric check covers projection, batch count, retained terrain and 21 usable building assets.
+
+## Milestones 3–7 — connected world systems
+
+Added a checked JSON registry of resources and abstract recipes; finite timed extraction, owned mass limits, atomic barter capacity checks, resumable production with input escrow/cancellation, food transformation, spoilage, crop seeds/growth/harvest/irrigation, water collection, heating/fuel, equipment wear/repair and expanded construction. Mines improve extraction; walls and gates affect traversability and invalidate cached paths. Original food/metal/craft behavior remains available for compatibility.
+
+Regional deterministic climate now tracks temperature, precipitation, wind, snow, drought, moisture, fertility and flood pressure. God interventions validate fully, record events and persist, including selected rectangular regions and simulation controls. Local observations feed private cognition and optional conversation opportunities; model schemas expose supported world actions, never God controls. Lightweight wildlife additions and optional capped fantasy threats remain engine-owned and disabled by default.
+
+The new tests cover these mechanics and save migration. Long-run review caught legacy gatherers attempting direct stone gathering, missing seed retrieval, failed capacity withdrawals recursing, and workers hoarding production output. Regression fixes retain real stock accounting. Full-pack agents can eat at the communal store and drink from a nearby actual reserve without inventing carry space. A subsequent 10,000-tick run finished with 20/20 NPCs alive.

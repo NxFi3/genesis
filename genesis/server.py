@@ -21,8 +21,8 @@ class Simulation:
         self.path = path
         self.world = persistence.load(path) if Path(path).exists() else World(seed, population)
         self.lock = threading.RLock()
-        self.paused = False
-        self.speed = 2.0
+        self.paused = self.world.climate.get('simulation_paused',False)
+        self.speed = self.world.climate.get('simulation_speed',2.0)
         self.running = True
         self.last_ms = 0
         self.ollama = ollama or Ollama()
@@ -50,6 +50,8 @@ class Simulation:
             self.pending_history.clear()
 
     def save(self):
+        self.world.climate['simulation_paused']=self.paused
+        self.world.climate['simulation_speed']=self.speed
         self.world.cognition_config = self.cognition.config.public()
         persistence.save(self.world, self.path, pending=self.pending_history)
         self.pending_history.clear()
@@ -94,6 +96,19 @@ class Simulation:
             raise ValueError('Expected a JSON object')
         action = command.get('action')
         with self.lock:
+            if action == 'god':
+                if command.get('operation') in ('pause','speed'):
+                    operation=command['operation']
+                    if operation=='pause':
+                        if type(command.get('paused')) is not bool: raise ValueError('Pause requires a boolean')
+                        self.paused=command['paused']
+                    else:
+                        from .environment import number
+                        self.speed=number(command.get('value'),.25,20,'speed')
+                    self.world.event('god_intervention',f'God Mode: {operation}.',[],intervention={k:v for k,v in command.items() if k!='action'})
+                    return {'ok':True,'message':'God Mode '+operation+' applied and recorded'}
+                from .environment import intervene
+                return intervene(self.world,command)
             if action == 'pause':
                 self.paused = bool(command.get('paused', True))
                 if not self.paused:
@@ -113,6 +128,8 @@ class Simulation:
                 self.cognition.invalidate()
                 self.pending_history.clear()
                 self.world = loaded
+                self.paused=loaded.climate.get('simulation_paused',self.paused)
+                self.speed=loaded.climate.get('simulation_speed',self.speed)
                 if getattr(loaded, 'cognition_config', None):
                     self.cognition.configure(loaded.cognition_config)
                 self.attach_world()
