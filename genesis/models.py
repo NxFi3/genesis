@@ -1,0 +1,99 @@
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Agent:
+    id: str
+    name: str
+    x: float
+    y: float
+    home: str
+    age: int = 25
+    hp: float = 100
+    max_hp: float = 100
+    stamina: float = 100
+    hunger: float = 15
+    thirst: float = 15
+    fatigue: float = 10
+    speed: float = 1.0
+    defense: float = 2
+    equipment: list = field(default_factory=list)
+    inventory: dict = field(default_factory=lambda: {'food': 5, 'water': 5, 'wood': 0, 'stone': 0, 'metal': 0, 'tools': 0})
+    personality: dict = field(default_factory=lambda: {'aggression': .2, 'courage': .5, 'sociability': .5})
+    skills: dict = field(default_factory=lambda: {'gather': 1, 'build': 1, 'combat': 1})
+    relationships: dict = field(default_factory=dict)
+    memories: list = field(default_factory=list)
+    knowledge: list = field(default_factory=list)
+    goals: list = field(default_factory=list)
+    occupation: str = 'gatherer'
+    activity: str = 'observe'
+    reason: str = 'Surveying opportunities'
+    target: str | None = None
+    incapacitated: bool = False
+    defending: bool = False
+    player: bool = False
+    combat_choice: str = 'avoid'
+    patrol_index: int = 0
+
+
+@dataclass
+class Settlement:
+    id: str
+    name: str
+    x: float
+    y: float
+    inventory: dict = field(default_factory=lambda: {'food': 100, 'water': 100, 'wood': 12, 'stone': 8, 'metal': 0, 'tools': 0})
+    stability: float = 100
+    conflict: str = 'peace'
+    diplomacy: dict = field(default_factory=dict)
+    council: list = field(default_factory=list)
+    policy: str = 'share_surplus'
+
+
+@dataclass
+class Resource:
+    id: str
+    kind: str
+    x: float
+    y: float
+    quantity: float
+    capacity: float
+    regeneration: float = 0
+
+
+@dataclass
+class Building:
+    id: str
+    kind: str
+    home: str
+    x: float
+    y: float
+    progress: float = 0
+    complete: bool = False
+    condition: float = 100
+
+
+@dataclass
+class Wildlife:
+    id: str
+    x: float
+    y: float
+    hp: float = 40
+    stamina: float = 70
+    species: str = 'deer'
+    activity: str = 'graze'
+    threat: str | None = None
+
+
+@dataclass
+class Conflict:
+    id: str
+    a: str
+    b: str
+    started: int
+    cause: str
+    state: str = 'active'
+    ended: int | None = None
+    outcome: str = ''
+    last_contact: int = 0
+    cooldown: int = 0

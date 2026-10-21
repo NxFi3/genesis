@@ -1,0 +1,1006 @@
+PROJECT: GENESIS — THE LIVING WORLD
+
+ROLE
+You are the lead architect, senior game developer, AI researcher,
+simulation engineer, and QA engineer responsible for building a
+complete, playable artificial civilization simulation.
+
+Your task is to DESIGN, IMPLEMENT, TEST, DEBUG, and DELIVER a
+real working software project.
+
+Do not merely write a design document, generate mockups, or
+provide pseudocode.
+
+You must produce actual runnable source code.
+
+You have substantial autonomy over implementation decisions.
+Avoid asking me unnecessary questions. Make reasonable technical
+decisions independently and document them.
+
+============================================================
+1. PROJECT VISION
+============================================================
+
+Create a persistent, interactive, medieval-inspired simulated
+world inhabited by autonomous artificial agents.
+
+The world must continue evolving without player intervention.
+
+Agents should be capable of:
+
+- Surviving independently
+- Gathering natural resources
+- Producing food
+- Building settlements
+- Developing economic relationships
+- Communicating naturally
+- Forming social relationships
+- Cooperating and competing
+- Establishing social institutions
+- Making independent decisions
+- Remembering past experiences
+- Learning from outcomes
+- Reacting to environmental changes
+- Influencing the development of their civilization
+
+The player must be able to enter this world, explore it,
+communicate with inhabitants, trade, and influence events.
+
+The simulation should produce interesting emergent behavior
+rather than relying on predefined storylines.
+
+The ultimate objective is a living artificial civilization
+sandbox, not a conventional scripted game.
+
+============================================================
+2. DEVELOPMENT PHILOSOPHY
+============================================================
+
+PRIORITY ORDER:
+
+1. A working simulation
+2. Autonomous agents
+3. Persistent world state
+4. Meaningful interactions
+5. Player participation
+6. Reliable local AI integration
+7. Visual presentation
+8. Advanced civilization mechanics
+
+Never sacrifice a working simulation for visual complexity.
+
+Do not implement fake functionality.
+
+For example:
+
+A character visually constructing a house without consuming
+resources or modifying world state is unacceptable.
+
+A character claiming to have harvested food without changing
+inventory or the environment is unacceptable.
+
+A character claiming to remember something without persistent
+memory is unacceptable.
+
+Every important action must have a real consequence in the
+simulation.
+
+============================================================
+3. TECHNOLOGY STACK
+============================================================
+
+Preferred architecture:
+
+Game Engine:
+Godot 4.x
+
+Language:
+GDScript for game presentation and player interaction.
+
+Simulation:
+Python 3.11+ or another suitable language if justified.
+
+AI:
+Ollama-compatible local LLM API.
+
+Database:
+SQLite.
+
+Target Platforms:
+Linux and Windows.
+
+Target hardware:
+
+CPU:
+AMD Ryzen 9 7900X
+
+GPU:
+NVIDIA RTX 5070 12GB
+
+RAM:
+32GB
+
+The application must work without cloud subscriptions.
+
+The simulation engine must be independent of the graphical
+renderer.
+
+It must support headless execution.
+
+Use modular architecture.
+
+Do not introduce unnecessary microservices or complicated
+deployment infrastructure.
+
+Prefer a single-command development startup.
+
+If a different architecture is significantly better, explain
+why and implement it.
+
+============================================================
+4. WORLD GENERATION
+============================================================
+
+Create a geographically coherent medieval world.
+
+The world should contain:
+
+- Forests
+- Plains
+- Mountains
+- Rivers
+- Lakes
+- Fertile farmland
+- Mineral deposits
+- Roads
+- Settlements
+- Wildlife habitats
+
+Terrain must influence movement, resource availability,
+settlement development, and economic decisions.
+
+Implement a world generation system supporting deterministic
+random seeds.
+
+The same seed and configuration should reproduce the same
+initial world.
+
+World resources must exist as actual simulation entities.
+
+Resources must have quantities and locations.
+
+Some resources should regenerate naturally.
+
+Others should be finite.
+
+Environmental changes should affect resource availability.
+
+============================================================
+5. INITIAL CIVILIZATION
+============================================================
+
+Create two geographically separated settlements.
+
+Settlement A:
+
+- Fertile land
+- Forest resources
+- Agricultural advantages
+- Limited mineral resources
+
+Settlement B:
+
+- Mineral resources
+- Stone deposits
+- Less fertile agricultural land
+- Different environmental challenges
+
+Initially populate each settlement with approximately
+10 autonomous inhabitants.
+
+These numbers must be configurable.
+
+The settlements must not be artificially forced into
+friendship, trade, conflict, or cooperation.
+
+Their relationships should develop from simulation events
+and agent decisions.
+
+Agents should be able to travel between settlements.
+
+New settlements should eventually be possible.
+
+============================================================
+6. AUTONOMOUS AGENT ARCHITECTURE
+============================================================
+
+Every agent must be a persistent individual.
+
+Each agent should have:
+
+Unique identity
+Name
+Age or life stage
+Personality
+Needs
+Skills
+Knowledge
+Inventory
+Memory
+Relationships
+Goals
+Occupation
+Current activity
+Home settlement
+Physical location
+
+Agent needs should include:
+
+Hunger
+Thirst
+Fatigue
+Safety
+Shelter
+Social interaction
+
+Needs must influence behavior.
+
+Agents must be able to choose among competing goals.
+
+Do not implement agents as simple scripted NPCs.
+
+However, do not call an LLM for every movement or routine
+action.
+
+Use a hybrid architecture:
+
+Layer 1:
+Deterministic simulation and action validation.
+
+Layer 2:
+Utility-based or goal-oriented decision making for
+routine behavior.
+
+Layer 3:
+LLM-based reasoning for important decisions.
+
+Layer 4:
+Long-term memory and reflection.
+
+The LLM must propose intentions.
+
+The simulation engine must validate and execute actions.
+
+LLM output must never directly mutate world state.
+
+============================================================
+7. AGENT ACTION SYSTEM
+============================================================
+
+Implement a general-purpose action system.
+
+Initial actions should include:
+
+Move
+Observe
+Gather
+Harvest
+Eat
+Drink
+Sleep
+Store
+Retrieve
+Craft
+Build
+Repair
+Trade
+Talk
+Offer
+Accept
+Reject
+Explore
+Help
+Rest
+Work
+
+Actions must have:
+
+Preconditions
+Required resources
+Execution duration
+Effects
+Failure conditions
+Event logging
+
+The system should allow future actions to be added without
+rewriting the agent architecture.
+
+Agents should be able to combine available actions to achieve
+higher-level goals.
+
+For example:
+
+Goal:
+Build a house.
+
+Possible plan:
+Find suitable land.
+Gather wood.
+Collect stone.
+Transport resources.
+Construct building.
+
+Do not hardcode complete life stories.
+
+============================================================
+8. CONSTRUCTION SYSTEM
+============================================================
+
+Buildings must be real world objects.
+
+Implement at least:
+
+Houses
+Farms
+Storage buildings
+Workshops
+Markets
+Defensive structures
+
+Buildings should require resources.
+
+Construction must take simulation time.
+
+Buildings should provide actual functionality.
+
+For example:
+
+A house provides shelter.
+
+A farm produces food.
+
+A storage building increases storage capacity.
+
+A workshop enables production.
+
+Construction should affect settlement development.
+
+Design the system so that additional building types can
+be introduced through data-driven definitions.
+
+============================================================
+9. ECONOMY AND PRODUCTION
+============================================================
+
+Implement a functional resource economy.
+
+Resources should include:
+
+Food
+Water
+Wood
+Stone
+Basic metal
+Tools
+
+Implement:
+
+Resource gathering
+Production
+Consumption
+Storage
+Transportation
+Trade
+Supply and demand indicators
+
+Agents should be able to specialize in occupations.
+
+Examples:
+
+Farmer
+Builder
+Woodcutter
+Miner
+Trader
+Craftsperson
+
+Occupations should emerge from opportunities and needs
+where feasible.
+
+Do not require a fixed occupation for every agent.
+
+Trade must exchange actual inventory.
+
+Economic activity must affect resource availability.
+
+============================================================
+10. ECOLOGY
+============================================================
+
+Implement a simplified but functional ecosystem.
+
+Include:
+
+Plants
+Trees
+Wildlife
+Resource regeneration
+Seasonal changes
+
+Plants should grow over time.
+
+Animals should have simplified needs and behaviors.
+
+Environmental resources should affect settlement survival.
+
+Avoid expensive individual AI models for animals.
+
+Use lightweight behavioral simulation.
+
+============================================================
+11. SOCIAL RELATIONSHIPS
+============================================================
+
+Agents must maintain persistent relationships.
+
+Relationships may include:
+
+Trust
+Familiarity
+Cooperation
+Rivalry
+Reputation
+
+Social interactions should influence these values.
+
+Agents should remember significant events involving
+other individuals.
+
+Agents must not automatically believe every statement.
+
+Information should have:
+
+A source
+A timestamp
+A confidence level
+A relationship to existing knowledge
+
+Agents may disagree.
+
+They may investigate claims.
+
+They may communicate information to others.
+
+Social changes should result from actual interactions,
+not random scripted events alone.
+
+============================================================
+12. LANGUAGE AND CONVERSATION
+============================================================
+
+Implement natural-language conversations through Ollama.
+
+Agents should be able to:
+
+Talk to each other
+Talk to the player
+Discuss needs
+Exchange information
+Negotiate trades
+Request assistance
+Discuss settlement events
+Express opinions based on memory and personality
+
+Conversation context should include:
+
+Relevant memories
+Current world conditions
+Agent goals
+Relationship history
+Recent events
+
+Use structured model output where appropriate.
+
+Handle malformed LLM responses safely.
+
+Implement timeouts, retries, and graceful degradation.
+
+When Ollama is unavailable, routine simulation must continue.
+
+Do not fake LLM conversations and present them as genuine.
+
+============================================================
+13. MEMORY SYSTEM
+============================================================
+
+Implement persistent memory for each agent.
+
+Memory categories:
+
+Episodic memory
+Social memory
+Knowledge
+Goals
+Important world events
+
+Memories should have:
+
+Timestamp
+Content
+Importance
+Source
+Confidence
+
+Implement memory retrieval.
+
+Avoid sending entire agent histories to the LLM.
+
+Use relevance-based retrieval.
+
+Implement memory consolidation or summarization.
+
+Important experiences should influence future decisions.
+
+Memory must survive application restarts.
+
+============================================================
+14. PLAYER INTERACTION
+============================================================
+
+The player must be able to enter the simulated world.
+
+Implement:
+
+Controllable player character
+Movement
+World exploration
+Interaction with inhabitants
+Natural-language dialogue
+Inventory
+Basic trading
+World inspection
+
+The player must be treated as an entity within the world.
+
+Player actions should have consequences.
+
+Agents should remember significant interactions with
+the player.
+
+The player must be able to influence social relationships
+through dialogue and actions.
+
+For example:
+
+The player may share a claim about another settlement.
+
+Different agents should independently evaluate that claim.
+
+Some may believe it.
+
+Others may doubt it.
+
+Others may seek additional evidence.
+
+Do not force a predetermined outcome.
+
+All political, cultural, and religious institutions in the
+simulation should be fictional.
+
+============================================================
+15. SETTLEMENT POLITICS
+============================================================
+
+Implement an extensible social organization system.
+
+Settlements may develop:
+
+Leaders
+Councils
+Rules
+Shared institutions
+Collective decisions
+Diplomatic relationships
+
+Start with simple mechanics.
+
+Agents should be able to discuss collective problems.
+
+Settlement decisions should influence actual simulation
+conditions.
+
+Support fictional belief systems and cultural traditions
+as future extensions.
+
+Do not require complex political simulation in the
+first playable milestone.
+
+============================================================
+16. CONFLICT AND DEFENSE
+============================================================
+
+Implement abstract conflict mechanics.
+
+Possible causes:
+
+Resource competition
+Territorial disputes
+Broken agreements
+Economic disagreements
+Social tensions
+
+Agents and settlements should have options for:
+
+Negotiation
+Cooperation
+Retreat
+Defense
+Conflict avoidance
+
+Conflict outcomes should affect resources, relationships,
+and settlement stability.
+
+Keep combat non-graphic.
+
+Avoid making conflict inevitable.
+
+Peaceful development must remain possible.
+
+============================================================
+17. EMERGENT CIVILIZATION
+============================================================
+
+The simulation should support:
+
+Settlement growth
+Migration
+Specialization
+Trade networks
+Resource scarcity
+Cooperation
+Social institutions
+Technological progression
+
+Do not pretend that genuine emergence has occurred merely
+because events were scripted.
+
+Provide evidence through simulation logs.
+
+Where behavior is hardcoded, document it honestly.
+
+Allow civilization mechanics to evolve through modular
+extensions.
+
+============================================================
+18. OBSERVER MODE
+============================================================
+
+Implement an observer interface.
+
+The observer should be able to:
+
+Pause simulation
+Resume simulation
+Change simulation speed
+Inspect agents
+Inspect buildings
+Inspect settlements
+Inspect inventories
+Inspect relationships
+Inspect memories
+View world events
+
+Provide an event timeline.
+
+Allow following individual agents.
+
+Provide basic statistics:
+
+Population
+Food production
+Resource consumption
+Building count
+Trade volume
+Settlement relationships
+
+The observer should be able to inspect why an agent
+selected an action.
+
+============================================================
+19. PERSISTENCE
+============================================================
+
+Implement reliable save/load.
+
+Persist:
+
+World state
+Terrain modifications
+Resources
+Buildings
+Agents
+Memories
+Relationships
+Inventories
+Simulation time
+Player state
+
+Use versioned save formats.
+
+Handle corrupted saves gracefully.
+
+Implement autosave.
+
+Avoid data loss during normal shutdown.
+
+============================================================
+20. PERFORMANCE
+============================================================
+
+The application must be designed for local execution.
+
+Do not run one LLM instance per agent.
+
+Use a shared model server.
+
+Schedule expensive reasoning requests.
+
+Use lightweight simulation for routine actions.
+
+Implement configurable simulation speed.
+
+Support headless accelerated simulation.
+
+Avoid unnecessary GPU memory usage.
+
+Keep rendering and simulation workloads separate
+where practical.
+
+Provide performance metrics.
+
+============================================================
+21. TESTING
+============================================================
+
+Automated tests are mandatory.
+
+Test:
+
+Resource conservation
+Inventory consistency
+Agent movement
+Agent survival behavior
+Food production
+Construction requirements
+Trading
+Memory persistence
+Save/load
+Simulation determinism
+LLM failure handling
+
+Create an integration test running at least
+1,000 simulation ticks.
+
+Verify that agents perform meaningful actions.
+
+Verify that resource quantities remain consistent.
+
+Verify that the simulation does not crash.
+
+Include tests with Ollama disabled.
+
+Do not claim a test passed unless it was actually executed.
+
+Provide test results.
+
+============================================================
+22. DEVELOPMENT MILESTONES
+============================================================
+
+MILESTONE 1:
+Working world simulation.
+
+Deliver:
+Terrain
+Resources
+Simulation clock
+Agent entities
+Movement
+Basic needs
+Headless execution
+
+MILESTONE 2:
+Autonomous survival.
+
+Deliver:
+Resource gathering
+Food production
+Storage
+Agent decision making
+Basic construction
+
+MILESTONE 3:
+Social simulation.
+
+Deliver:
+Relationships
+Conversations
+Memory
+Trade
+Two settlements
+
+MILESTONE 4:
+Interactive game.
+
+Deliver:
+Godot visualization
+Player movement
+Agent inspection
+Player dialogue
+Observer controls
+
+MILESTONE 5:
+Persistence and validation.
+
+Deliver:
+Save/load
+Automated tests
+Performance improvements
+Documentation
+Runnable release
+
+Complete and test each milestone before expanding.
+
+If time is limited, prioritize a fully working vertical
+slice over partially implemented features.
+
+============================================================
+23. USER EXPERIENCE
+============================================================
+
+The application should be easy to run.
+
+Provide:
+
+Clear installation instructions
+Automatic dependency setup where possible
+Simple Ollama configuration
+Model selection
+Simulation settings
+New world creation
+Save/load interface
+Error messages
+Performance information
+
+Avoid requiring manual editing of multiple configuration files.
+
+The project should be usable by someone who is not familiar
+with its internal architecture.
+
+============================================================
+24. DELIVERABLES
+============================================================
+
+Deliver:
+
+Complete source code
+Godot project
+Simulation backend
+Agent architecture
+Database schema
+Automated tests
+Configuration files
+Installation scripts
+README
+Architecture documentation
+Known limitations
+Development roadmap
+
+Prefer a GitHub repository if authenticated write access
+is available.
+
+Otherwise provide a complete downloadable project archive.
+
+Do not claim GitHub publication without verifying it.
+
+Do not leave critical source files missing.
+
+============================================================
+25. QUALITY REQUIREMENTS
+============================================================
+
+No placeholder implementations presented as complete.
+
+No fake screenshots.
+
+No fabricated benchmark results.
+
+No untested claims.
+
+No purely decorative AI agents.
+
+No hardcoded demonstration conversations presented as
+real model-generated dialogue.
+
+Every completed feature must be demonstrable.
+
+Document incomplete features honestly.
+
+============================================================
+26. FINAL ACCEPTANCE TEST
+============================================================
+
+The final playable build should demonstrate:
+
+1. A persistent world containing two settlements.
+
+2. At least 10 autonomous agents.
+
+3. Agents gathering resources and satisfying needs.
+
+4. Actual food production and consumption.
+
+5. At least one building constructed using gathered
+   resources.
+
+6. Persistent agent memories.
+
+7. Agents interacting socially.
+
+8. A player entering the world.
+
+9. The player speaking to an agent through Ollama.
+
+10. World state surviving save/load.
+
+11. A headless simulation completing 1,000 ticks.
+
+12. Automated tests completing successfully.
+
+If any requirement cannot be completed, clearly report it.
+
+Never substitute an animated mockup for a functional system.
+
+============================================================
+27. EXECUTION INSTRUCTIONS
+============================================================
+
+Begin implementation immediately.
+
+First inspect the available development environment.
+
+Check which tools, runtimes, and repository integrations
+are actually available.
+
+Create a concise architecture and milestone plan.
+
+Then implement the project.
+
+Do not spend most of the available time discussing
+architecture.
+
+Write code, execute tests, inspect failures, and fix them.
+
+After each milestone:
+
+- Run available tests.
+- Report what works.
+- Report what remains incomplete.
+- Preserve the current working state.
+- Continue to the next milestone.
+
+If Godot cannot run in your environment, still create
+the complete Godot project and validate its structure
+as far as possible.
+
+Do not claim the graphical application was tested if
+it was not.
+
+Use automated tests to validate the headless simulation.
+
+Make the project easy to transfer to my local machine.
+
+The final result must be a genuine, extensible,
+locally runnable artificial civilization simulation.
+
+START NOW.

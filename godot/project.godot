@@ -1,0 +1,15 @@
+; GENESIS presentation client. Simulation is owned by Python.
+config_version=5
+
+[application]
+config/name="GENESIS — The Living World"
+run/main_scene="res://Main.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.045, 0.065, 0.075, 1)
