@@ -15,6 +15,8 @@ var scene: Node3D
 var camera: Camera3D
 var ground: Node3D
 var structures: Node3D
+var deposits: Node3D
+var deposit_hash:=0
 var people: Node3D
 var foliage: Node3D
 var terrain_layer: Node2D # Exposes retained-layer count to the existing smoke checks.
@@ -31,6 +33,7 @@ var conversation_agents: Dictionary = {}
 var cargo_agents: Dictionary = {}
 var batches: Dictionary = {}
 var heights: Array = []
+var custom_climate: Dictionary = {}
 var sunlight: DirectionalLight3D
 var environment: Environment
 
@@ -45,9 +48,10 @@ func _ready() -> void:
     viewport_3d.add_child(scene)
     ground = Node3D.new()
     structures = Node3D.new()
+    deposits = Node3D.new()
     people = Node3D.new()
     foliage = Node3D.new()
-    for node in [ground,structures,people,foliage]: scene.add_child(node)
+    for node in [ground,structures,deposits,people,foliage]: scene.add_child(node)
     var sky := WorldEnvironment.new()
     environment = Environment.new()
     environment.background_mode = Environment.BG_COLOR
@@ -90,7 +94,19 @@ func height_at(x: float, y: float) -> float:
 func accept_state(value: Dictionary) -> void:
     var first := state.is_empty()
     state = value
-    var next := hash([state.terrain,state.get("elevation",[]),state.get("season","spring")])
+    custom_climate.clear()
+    var override: Dictionary=state.get("climate",{}).get("overrides",{}).get("region",{})
+    if not override.is_empty():
+        custom_climate=override.duplicate()
+        var weather: String=override.get("weather","clear")
+        if not custom_climate.has("precipitation"):custom_climate.precipitation={"rain":.55,"heavy_rain":.9,"snow":.45,"blizzard":.65,"thunderstorm":.85,"fog":.15}.get(weather,0.)
+        if not custom_climate.has("snow"):custom_climate.snow=custom_climate.precipitation if weather in ["snow","blizzard"] else 0.
+        if not custom_climate.has("drought"):custom_climate.drought=1. if weather=="drought" else 0.
+        custom_climate.moisture=state.get("climate",{}).get("regions",{}).get("region",{}).get("moisture",.65)
+    var climate_colors: Array=[]
+    for env in state.get("environment",{}).values():climate_colors.append([int(float(env.get("moisture",.65))*4),env.get("weather","clear")])
+    climate_colors.append([custom_climate.get("weather",""),custom_climate.get("bounds",[]),int(float(custom_climate.get("moisture",.65))*4)])
+    var next := hash([state.terrain,state.get("elevation",[]),state.get("season","spring"),climate_colors])
     if next != terrain_hash:
         terrain_hash = next
         heights.clear()
@@ -103,7 +119,7 @@ func accept_state(value: Dictionary) -> void:
             heights.append(row)
         _terrain()
     var visuals: Array = []
-    for b in state.buildings.values(): visuals.append([b.id,b.kind,b.complete,b.get("condition",100)])
+    for b in state.buildings.values(): visuals.append([b.id,b.kind,b.complete,b.get("condition",100),state.get("crops",{}).get(b.id,{}).get("stage",""),state.get("fires",{}).get(b.id,{}).get("lit",false),state.get("gates",{}).get(b.id,true)])
     next = hash(visuals)
     if next != building_hash:
         building_hash = next
@@ -115,6 +131,12 @@ func accept_state(value: Dictionary) -> void:
             for id in c.participants: conversation_agents[id] = true
     for s in state.get("shipments",{}).values():
         if s.state in ["in_transit","returning"]: cargo_agents[s.courier] = true
+    var stocks: Array=[]
+    for r in state.resources.values(): stocks.append([r.id,int(float(r.quantity)/10)])
+    next=hash(stocks)
+    if next!=deposit_hash:
+        deposit_hash=next
+        _deposits()
     _entities()
     if first: reset_camera()
 
@@ -140,6 +162,9 @@ func _terrain() -> void:
             color = color.lightened(float((x*37+y*13)%11)*.005)
             if state.season == "winter" and kind not in ["river","lake"]: color = color.lerp(Color("d3dbcd"),.58)
             if state.season == "autumn" and kind in ["plains","forest"]: color = color.lerp(Color("bb9d68"),.25)
+            var local_climate:=climate_at(Vector2(x,y))
+            if kind in ["plains","forest","farmland"] and float(local_climate.get("drought",0))>.5:
+                color=color.lerp(Color("c7b17c"),clampf(1-float(local_climate.get("moisture",.65)),0,1)*.5)
             var corners: Array[Vector3] = []
             for corner in [Vector2(-.5,-.5),Vector2(.5,-.5),Vector2(.5,.5),Vector2(-.5,.5)]:
                 var h := height_at(x+corner.x,y+corner.y)
@@ -205,7 +230,36 @@ func _buildings() -> void:
         model.position = Vector3(b.x,height_at(b.x,b.y),b.y)
         # Legacy saves place house and storage on the same tile; separate display footprints only.
         if b.kind == "storage" and state.buildings.values().any(func(other): return other.id != b.id and other.x == b.x and other.y == b.y): model.position.x += .65
+        if b.kind=="farm":
+            var stage: String=state.get("crops",{}).get(b.id,{}).get("stage","mature")
+            for child in model.get_children():
+                if child.mesh==Art.meshes.get("cone"):
+                    child.visible=stage!="harvested"
+                    child.scale.y*=.3 if stage=="seedling" else .65 if stage=="growing" else 1.0
+        if b.kind in ["campfire","hearth"] and state.get("fires",{}).get(b.id,{}).get("lit",false):
+            Art.part(model,"cone",Vector3(0,.3,0),Vector3(.35,.65,.35),Color("efa94e"))
+            Art.part(model,"cone",Vector3(.05,.35,-.05),Vector3(.18,.4,.2),Color("f9d883"))
+        if b.kind=="gate" and state.get("gates",{}).get(b.id,true): model.rotation.y=PI*.5
         structures.add_child(model)
+
+func _deposits() -> void:
+    _clear(deposits)
+    for r in state.resources.values():
+        if float(r.quantity)<=0 or r.kind=="wood": continue
+        var root:=Node3D.new()
+        root.position=Vector3(r.x,height_at(r.x,r.y),r.y)
+        if r.kind in ["water","fish"]:
+            if r.kind=="water" and state.terrain[roundi(r.y)][roundi(r.x)] not in ["river","lake"]:
+                Art.part(root,"cylinder",Vector3(0,.04,0),Vector3(.75,.08,.75),Color("519ca8"))
+            elif r.kind=="fish":
+                for x in [-.15,.15]:Art.part(root,"sphere",Vector3(x,.03,0),Vector3(.12,.05,.3),Color("b5d6cd"))
+        elif r.kind in ["food","fruit","vegetables","seeds","plant_fiber"]:
+            Art.part(root,"sphere",Vector3(0,.2,0),Vector3(.65,.45,.65),Color("58814e"))
+            for x in [-.18,.12]: Art.part(root,"sphere",Vector3(x,.4,-.15),Vector3(.13,.13,.13),Color("d0a261"))
+        else:
+            var color: Color={"iron_ore":Color("9f795c"),"copper_ore":Color("8cb2a0"),"gold_ore":Color("d7b65f"),"silver_ore":Color("c4d6d4"),"coal":Color("56615b"),"clay":Color("bb8c6d"),"sand":Color("d8c599")}.get(r.kind,Color("9da99a"))
+            for x in [-.2,.18]:Art.part(root,"sphere",Vector3(x,.15,0),Vector3(.43,.4,.5),color)
+        deposits.add_child(root)
 
 func _entities() -> void:
     var living: Dictionary = {}
@@ -218,12 +272,21 @@ func _entities() -> void:
                 models.erase(a.id)
             if not models.has(a.id):
                 var color := Color("7ec4a2") if a.get("home","") == "a" else Color("91b9d6")
-                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false)) if category == "agents" else Art.animal(a.get("species","wolf"))
+                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false)) if category == "agents" else Art.human(Color("70836a"),"",false) if category=="threats" else Art.animal(a.get("species","wolf"))
+                if category=="threats":
+                    model.get_node("ArmL").rotation.x=-1.2
+                    model.get_node("ArmR").rotation.x=-1.2
                 model.name = a.id
                 people.add_child(model)
                 models[a.id] = model
                 appearances[a.id] = appearance
                 positions[a.id] = Vector3(a.x,height_at(a.x,a.y),a.y)
+            if category=="agents":
+                var carried:=0.0
+                for kind in a.inventory:
+                    if kind not in ["food","water"]:carried+=float(a.inventory[kind])
+                models[a.id].get_node("Cargo").visible=carried>=6
+
     for id in models.keys():
         if not living.has(id):
             models[id].queue_free()
@@ -248,7 +311,7 @@ func _process(delta: float) -> void:
             var down: bool = a.get("incapacitated",false) or a.get("activity","") in ["sleep","rest","incapacitated"]
             model.rotation.z = PI*.48 if down else 0.0
             if category == "agents":
-                var working: bool = a.get("activity","") in ["build","work","gather","mine","craft","hunt","defend","fight"]
+                var working: bool = a.get("activity","") in ["build","work","gather","mine","craft","hunt","defend","fight","produce","fish","harvest"]
                 var walking := Vector2(motion.x,motion.z).length() > .02
                 for side in ["L","R"]:
                     var sign_value := 1 if side == "L" else -1
@@ -342,11 +405,29 @@ func _draw() -> void:
             if cargo_agents.has(a.id): tag(p+Vector2(12,0),"▣",Color("dab788"),12)
         for b in state.buildings.values():
             if not b.complete and zoom > 1.1: tag(screen_point(b)+Vector2(0,-14),"Building · %.0f" % b.progress,Color("e6c384"),11)
-    var weather: String = state.get("weather","clear")
-    if weather in ["rain","heavy_rain","thunderstorm"]:
-        for i in range(54):
-            var p := Vector2(fposmod(i*173+clock*60,view_size.x),fposmod(i*79+clock*180,view_size.y))
+    for i in range(54):
+        var p:=Vector2(fposmod(i*173+clock*60,view_size.x),fposmod(i*79+clock*180,view_size.y))
+        var tile:=screen_to_tile(p)
+        if tile.x<0 or tile.y<0 or tile.x>=state.width or tile.y>=state.height:continue
+        var local_climate:=climate_at(tile)
+        var snow: float=local_climate.get("snow",0)
+        if snow>.1:
+            draw_circle(p,1.4,Color(.95,.98,1,.65))
+        elif float(local_climate.get("precipitation",0))>.2:
             draw_line(p,p+Vector2(-3,9),Color(.7,.84,.88,.35),1)
-    elif weather in ["snow","blizzard"]:
-        for i in range(48): draw_circle(Vector2(fposmod(i*137+clock*18,view_size.x),fposmod(i*73+clock*35,view_size.y)),1.4,Color(.95,.98,1,.65))
-    if weather in ["fog","blizzard"]: draw_rect(Rect2(Vector2.ZERO,view_size),Color(.8,.85,.83,.18))
+    if state.get("weather","") in ["fog","blizzard"]:draw_rect(Rect2(Vector2.ZERO,view_size),Color(.8,.85,.83,.12))
+
+func climate_at(tile: Vector2) -> Dictionary:
+    var nearest: Dictionary={}
+    var best:=INF
+    for settlement in state.get("settlements",{}).values():
+        var d:=tile.distance_squared_to(Vector2(settlement.x,settlement.y))
+        if d<best:
+            best=d
+            nearest=state.get("environment",{}).get(settlement.id,{})
+    var custom: Dictionary=custom_climate
+    if custom.has("bounds") and int(custom.get("expires",0))>int(state.get("tick",0)):
+        var b: Array=custom.bounds
+        if tile.x>=b[0] and tile.y>=b[1] and tile.x<=b[2] and tile.y<=b[3]:
+            return custom
+    return nearest

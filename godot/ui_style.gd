@@ -52,5 +52,6 @@ static func heading(value: String) -> String:
 static func goods(inventory: Dictionary) -> String:
     var lines: Array[String] = []
     for kind in inventory:
+        if float(inventory[kind])<.005: continue
         lines.append("%-12s  %5.1f" % [str(kind).capitalize(), float(inventory[kind])])
     return "[code]%s[/code]" % safe("\n".join(lines))

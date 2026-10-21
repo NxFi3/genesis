@@ -14,6 +14,7 @@ import json
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--headless', action='store_true')
+    p.add_argument('--flat', action='store_true', help='Use the preserved top-down client')
     p.add_argument('--ollama', action='store_true')
     p.add_argument('--port', type=int, default=8765)
     args, extra = p.parse_known_args()
@@ -43,7 +44,7 @@ def main():
                 time.sleep(.1)
         else:
             raise RuntimeError('Backend did not become ready')
-        subprocess.run([godot, '--path', str(root/'godot'), '--', f'--api=http://127.0.0.1:{args.port}'], check=True)
+        subprocess.run([godot, '--path', str(root/'godot'), '--', f'--api=http://127.0.0.1:{args.port}']+(['--flat'] if args.flat else []), check=True)
     finally:
         if process.poll() is None:
             # SIGINT gives Python an opportunity to atomically save before shutdown.

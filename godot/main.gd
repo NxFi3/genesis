@@ -4,6 +4,8 @@ var api := "http://127.0.0.1:8765"
 const MAP_RECT := Rect2(24, 130, 864, 516)
 const UIStyle = preload("res://ui_style.gd")
 const WorldView = preload("res://world_3d.gd")
+const EnvironmentPanel = preload("res://environment_panel.gd")
+var god_panel: PopupPanel
 const FlatView = preload("res://world_view.gd")
 var flat_renderer := false
 var state: Dictionary = {}
@@ -116,9 +118,10 @@ func _make_ui() -> void:
         panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(panel)
     label_at("G E N E S I S  3", Vector2(24, 14), 28).modulate = Color("e3ce9a")
-    label_at("THE LIVING WORLD  /  A chronicle of two settlements", Vector2(305, 28), 14)
+    label_at("THE LIVING WORLD  /  Civilization & survival", Vector2(305, 28), 14)
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
+    button_at("God Mode",Vector2(775,15),_open_god_mode,110)
     mode_button = button_at("Player mode", Vector2(900, 15), _toggle_mode, 130)
     button_at("Pause / Resume", Vector2(1040, 15), func(): send({"action": "pause", "paused": not state.get("paused", false)}), 145)
     button_at("Settings", Vector2(1195, 15), _open_settings, 70)
@@ -153,7 +156,7 @@ func _make_ui() -> void:
     memory_details = rich_tab(inspector, "Mind")
     inventory_details = rich_tab(inspector, "Player")
     settlement_details = rich_tab(inspector, "Town")
-    label_at("WASD move / pan · wheel zoom · middle drag · F focus · Home fit map", Vector2(24, 657), 12)
+    label_at("WASD move / pan · wheel zoom · middle drag · F focus · Home map · F1/F2 towns · P player", Vector2(24, 657), 12)
     label_at("ACTIONS  /  requires reach & supplies", Vector2(910, 552), 12)
     button_at("Gather", Vector2(910, 578), func(): player_command({"action": "gather"}), 80, true)
     button_at("Rest", Vector2(998, 578), func(): player_command({"action": "rest"}), 80, true)
@@ -170,7 +173,7 @@ func _make_ui() -> void:
     building_choice = OptionButton.new()
     building_choice.position = Vector2(24, 681)
     building_choice.size = Vector2(145, 30)
-    for kind in ["house", "farm", "storage", "workshop", "market", "watchtower", "road", "bridge", "hall", "well"]:
+    for kind in ["house", "farm", "storage", "workshop", "market", "watchtower", "road", "bridge", "hall", "well","barn","warehouse","mine","furnace","blacksmith","carpenter","rain_collector","campfire","hearth","wall","gate"]:
         building_choice.add_item(kind)
     add_child(building_choice)
     button_at("Plan building", Vector2(179, 681), func(): player_command({"action": "build", "kind": building_choice.get_item_text(building_choice.selected)}), 120, true)
@@ -204,6 +207,14 @@ func _make_ui() -> void:
     _make_settings()
     _make_actions()
     _make_journal()
+    god_panel=EnvironmentPanel.new()
+    god_panel.command_requested.connect(send)
+    add_child(god_panel)
+
+func _open_god_mode() -> void:
+    if player_mode: _toggle_mode()
+    god_panel.update_world(state)
+    god_panel.popup_centered()
 
 func _toggle_mode() -> void:
     player_mode = not player_mode
@@ -247,7 +258,7 @@ func _process(delta: float) -> void:
             busy = false
             status_label.text = "Could not send command: %s" % error_string(error)
     var focused := get_viewport().gui_get_focus_owner()
-    if not settings_open and not actions_open and not journal_open and not placing_site and not (focused is LineEdit or focused is TextEdit):
+    if not god_panel.visible and not settings_open and not actions_open and not journal_open and not placing_site and not (focused is LineEdit or focused is TextEdit):
         var direction := Vector2.ZERO
         if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP): direction.y -= 1
         if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN): direction.y += 1
@@ -276,6 +287,12 @@ func _process(delta: float) -> void:
             assert(view.zoom >= 1.3)
             assert(view.terrain_layer.redraw_count > 0 if flat_renderer else view.terrain_revision > 0)
             assert(theme != null)
+            god_panel.popup_centered()
+            await get_tree().process_frame
+            assert(god_panel.visible)
+            assert(god_panel.fields.weather.item_count==11)
+            assert(god_panel.fields.region.item_count==4)
+            god_panel.hide()
             assert(details.bbcode_enabled)
             journal.popup_centered()
             assert(journal.visible)
@@ -343,6 +360,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     if not parsed is Dictionary:
         return
     state = parsed
+    god_panel.update_world(state)
     view.accept_state(state)
     view.selected = selected
     var environment: Dictionary = state.get("environment", {})
@@ -369,13 +387,13 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     _write_rich(timeline, "\n".join(lines), true)
     _write_rich(journal_events, timeline.text, true)
     var new_ids: Array[String] = []
-    for category in ["agents", "settlements", "buildings", "resources", "wildlife"]:
-        for key in state[category]: new_ids.append(key)
+    for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+        for key in state.get(category,{}): new_ids.append(key)
     if new_ids != selector_ids:
         selector_ids = new_ids
         selector.clear()
-        for category in ["agents", "settlements", "buildings", "resources", "wildlife"]:
-            for entity in state[category].values():
+        for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+            for entity in state.get(category,{}).values():
                 selector.add_item("%s / %s" % [category, entity.get("name", entity.id)])
     if selected in selector_ids:
         selector.select(selector_ids.find(selected))
@@ -409,6 +427,12 @@ func _focus_link(id: Variant) -> void:
     _inspect()
     view.focus_selected()
 
+func _inventory_mass(goods: Dictionary) -> float:
+    var total:=0.0
+    var definitions: Dictionary=state.get("catalogue",{}).get("resources",{})
+    for kind in goods: total+=float(goods[kind])*float(definitions.get(kind,{}).get("mass",1))
+    return total
+
 func _name(id: String) -> String:
     return str(state.agents.get(id, state.settlements.get(id, {})).get("name", id))
 
@@ -423,6 +447,10 @@ func _inspect() -> void:
         text += UIStyle.heading("WELLBEING")
         text += "Health  %.0f / %.0f     Stamina  %.0f\nHunger  %.0f    Thirst  %.0f    Fatigue  %.0f\nSafety need  %.0f    Company need  %.0f\n\n" % [a.hp,a.max_hp,a.stamina,a.hunger,a.thirst,a.fatigue,a.get("safety",0),a.get("social",0)]
         text += UIStyle.heading(str(a.activity).capitalize()) + UIStyle.safe(a.reason) + "\n\n"
+        text += "Warmth need %.0f · Carrying %.0f / %.0f units\n\n" % [a.get("warmth",0),_inventory_mass(a.inventory),a.get("carry_capacity",120)]
+        var job: Dictionary=state.get("production_jobs",{}).get(a.get("production_job",""),{})
+        if not job.is_empty() and job.get("state","")=="working": text+="Producing %s · %.0f / %.0f work\n\n" % [job.recipe,job.progress,job.duration]
+        if a.get("extraction",{}).get("progress",0)>0: text+="Extraction · %.0f work on %s\n\n" % [a.extraction.progress,UIStyle.safe(a.extraction.get("target",""))]
         text += UIStyle.heading("CARRIED GOODS") + UIStyle.goods(a.inventory) + "\n\n"
         text += UIStyle.heading("EQUIPMENT") + UIStyle.safe(", ".join(a.equipment) if not a.equipment.is_empty() else "No equipment") + "\n\n"
         text += UIStyle.heading("SKILLS & CHARACTER")
@@ -465,7 +493,7 @@ func _inspect() -> void:
         _write_rich(memory_details,mind)
     else:
         for category in ["buildings","settlements","resources","wildlife"]:
-            if state[category].has(selected):
+            if state.get(category,{}).has(selected):
                 var entity: Dictionary = state[category][selected]
                 home = entity.get("home",entity.id if category == "settlements" else "a")
                 var text := UIStyle.heading(str(entity.get("name",entity.get("kind",entity.get("species",category)))).capitalize())
@@ -488,6 +516,11 @@ func _inspect() -> void:
         if b.home == home and not b.complete: town_text += "%s · %.0f work completed\n" % [str(b.kind).capitalize(),b.progress]
     for shipment in state.get("shipments",{}).values():
         if shipment.get("origin","") == home: town_text += "%s → %s · %s\n" % [UIStyle.safe(shipment.id),UIStyle.safe(_name(str(shipment.get("destination","")))),UIStyle.safe(shipment.state)]
+    var local_env: Dictionary=state.get("environment",{}).get(home,{})
+    if not local_env.is_empty():
+        town_text+="\n"+UIStyle.heading("LOCAL ENVIRONMENT")+"%s · %.0f °C\nMoisture %.0f%% · Water reserve %.0f\n" % [str(local_env.weather).capitalize(),local_env.temperature,local_env.moisture*100,local_env.get("water_reserve",0)]
+    for crop in state.get("crops",{}).values():
+        if state.buildings.get(crop.building,{}).get("home","")==home: town_text+="%s: %s · %s\n" % [crop.building,crop.kind,crop.stage]
     _write_rich(settlement_details,town_text)
     _update_conversations()
 
@@ -637,8 +670,13 @@ func _new_world_dialog() -> void:
     dialog.popup_centered()
 
 func _unhandled_input(event: InputEvent) -> void:
-    if settings_open or actions_open or journal_open: return
+    if god_panel.visible or settings_open or actions_open or journal_open: return
     if event is InputEventKey and event.pressed:
+        if event.keycode in [KEY_F1,KEY_F2,KEY_P]:
+            selected="a" if event.keycode==KEY_F1 else "b" if event.keycode==KEY_F2 else "player"
+            _inspect()
+            view.focus_selected()
+            view.follow_agent=true
         if event.keycode == KEY_F: view.focus_selected()
         if event.keycode == KEY_HOME: view.reset_camera()
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and placing_site:
@@ -662,8 +700,8 @@ func _unhandled_input(event: InputEvent) -> void:
                 _open_actions()
             elif event.button_index == MOUSE_BUTTON_LEFT and not state.is_empty():
                 var closest := 14.0
-                for category in ["agents", "buildings", "settlements", "resources", "wildlife"]:
-                    for entity in state[category].values():
+                for category in ["agents", "buildings", "settlements", "resources", "wildlife","threats"]:
+                    for entity in state.get(category,{}).values():
                         var dist: float = view.screen_point(entity).distance_to(event.position - MAP_RECT.position)
                         if dist < closest:
                             selected = entity.id
@@ -734,7 +772,7 @@ func _make_actions() -> void:
     trade.name = "Trade"
     tabs.add_child(trade)
     action_note(trade, "Offers target the selected nearby inhabitant. They transfer nothing until accepted. Incoming offers may expire or fail if stock/proximity changes.")
-    var goods := ["food", "water", "wood", "stone", "metal", "tools"]
+    var goods := ["food", "water", "wood", "stone", "metal", "tools","iron_ore","copper_ore","gold_ore","silver_ore","coal","clay","sand","plant_fiber","seeds","hides","wool","planks","bricks","charcoal","iron_ingot","copper_ingot","gold_ingot","silver_ingot","wheat","vegetables","fruit","raw_meat","cooked_meat","fish","bread"]
     action_options(trade, "Give", "offered", goods)
     action_fields.offered.select(2)
     action_options(trade, "Request", "wanted", goods)
@@ -785,6 +823,32 @@ func _make_actions() -> void:
     action_button(build, "Start selected construction", _build_at_site)
     action_button(build, "Contribute work to selected project", func(): player_command({"action": "work", "building": selected}))
     action_button(build, "Repair selected building", func(): player_command({"action": "repair", "building": selected}))
+    var life := VBoxContainer.new()
+    life.name="Survival"
+    tabs.add_child(life)
+    action_note(life,"Select a deposit, animal, farm or fire in the world, then act nearby. Mining/fishing take repeated work ticks; crops, fuel and yields are real.")
+    action_button(life,"Mine selected finite deposit",func(): player_command({"action":"mine","resource":selected}))
+    action_button(life,"Fish selected habitat",func(): player_command({"action":"fish","resource":selected}))
+    action_button(life,"Collect selected water reserve",func(): player_command({"action":"collect_water","resource":selected}))
+    action_button(life,"Hunt selected wildlife (non-graphic)",func(): player_command({"action":"hunt","target":selected}))
+    action_options(life,"Crop","crop",["wheat","vegetables"])
+    action_button(life,"Plant at selected farm",func(): player_command({"action":"plant","building":selected,"crop":action_value("crop")}))
+    action_button(life,"Harvest selected mature farm",func(): player_command({"action":"harvest","building":selected}))
+    action_button(life,"Irrigate farm with two owned water",func(): player_command({"action":"irrigate","building":selected,"amount":2}))
+    action_button(life,"Fuel selected hearth / campfire (one wood)",func(): player_command({"action":"fuel","building":selected,"kind":"wood","amount":1}))
+    action_button(life,"Extinguish selected fire",func(): player_command({"action":"extinguish","building":selected}))
+    var industry := VBoxContainer.new()
+    industry.name="Industry"
+    tabs.add_child(industry)
+    action_note(industry,"Production reserves owned inputs and progresses while you remain near the required home facility. Leaving pauses the job. Cancel returns reserved inputs once.")
+    action_options(industry,"Recipe","production",["planks","bricks","charcoal","smelt_iron","smelt_copper","smelt_gold","smelt_silver","bread","cook_meat","cook_fish","refined_tools","iron_blade","wool_coat","leather_coat"])
+    action_button(industry,"Start / check timed production",func(): player_command({"action":"produce","recipe":action_value("production")}))
+    action_button(industry,"Cancel production and reclaim inputs",func(): player_command({"action":"cancel_production"}))
+    action_options(industry,"Repair equipment","equipment_repair",["staff","shield","padded_coat","iron_blade","wool_coat","leather_coat"])
+    action_button(industry,"Repair using one tool at a workshop",func(): player_command({"action":"repair_equipment","item":action_value("equipment_repair")}))
+    action_button(industry,"Repel selected nearby fantasy threat",func(): player_command({"action":"repel","target":selected}))
+    action_button(industry,"Open selected home gate",func(): player_command({"action":"gate","building":selected,"open":true}))
+    action_button(industry,"Close selected home gate",func(): player_command({"action":"gate","building":selected,"open":false}))
     var close := Button.new()
     close.name = "CloseActions"
     close.text = "Close"

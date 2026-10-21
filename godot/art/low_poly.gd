@@ -173,6 +173,9 @@ static func human(faction: Color, occupation: String, player: bool) -> Node3D:
             part(root,"box",Vector3(0,.48,.2),Vector3(.32,.4,.15),Color("aa8359"))
         "craftsperson":
             part(root,"box",Vector3(0,.45,-.17),Vector3(.25,.4,.04),Color("806954"))
+    var cargo:=part(root,"box",Vector3(0,.48,.22),Vector3(.28,.28,.20),Color("ad895a"))
+    cargo.name="Cargo"
+    cargo.visible=false
     return root
 
 static func animal(species: String) -> Node3D:

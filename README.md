@@ -1,17 +1,17 @@
-# GENESIS 2 — Agentic Civilization Sandbox
+# GENESIS 3 — The Living World
 
-An evolving 2D medieval sandbox with independent human agents, a Python simulation, a Godot 4 client, and SQLite persistence. The simulation engine remains authoritative. Shared asynchronous local inference can generate each inhabitant's own goals, executable plans, and conversations; survival and combat continue without a model.
+An evolving 2.5D medieval sandbox with independent human agents, a Python simulation, a Godot 4 client, and SQLite persistence. The simulation engine remains authoritative. Shared asynchronous local inference can generate each inhabitant's own goals, executable plans, and conversations; survival and combat continue without a model.
 
-**Development branch:** `feature/genesis-agentic-v2`, based on `999bc94`. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Validation and acceptance evidence](docs/validation.md) · [Architecture and remaining limits](docs/architecture.md) · [Development log](docs/development-v2.md).
+**Integration branch:** `feature/genesis-3-world`, preserving `813447d` and the v2 baseline. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Current validation](docs/validation-v3.md) · [Genesis 3 systems and remaining limits](docs/genesis3.md) · [Development log](docs/development-v2.md).
 
-The latest update adds procedural colony artwork, readable inspectors, a larger conversation journal, grounded conversation opportunities, preserved plans and work commitments. [Client guide and screenshots](docs/client-v2.md) · [Conversation behavior](docs/communication-update.md).
+The latest version adds an orthographic 3D world, original low-poly assets, timed mining/production, crops/cooking/heat, regional weather and a persistent God Mode panel. [Genesis 3 guide and screenshots](docs/genesis3.md) · [Preserved conversation behavior](docs/communication-update.md).
 
 ## Start locally
 
 Install **Python 3.11+** and **Godot 4.x** on PATH (`godot`, `godot4`, or `godot.exe`). Python uses only its standard library; no pip packages or cloud subscriptions are needed.
 
 ```sh
-git clone --branch feature/genesis-agentic-v2 https://github.com/NxFi3/genesis.git
+git clone --branch feature/genesis-3-world https://github.com/NxFi3/genesis.git
 cd genesis
 python3 run.py
 ```
@@ -55,6 +55,7 @@ Model endpoints run on the **backend machine**. A cloud machine's localhost is d
 - **More actions:** offer an exchange, accept/reject pending offers, craft supported equipment at a workshop, store/retrieve resources, teach a skill or known claim, repair a selected building, propose council policies/group construction, or cast a council vote. Preconditions and refusal reasons appear in status. Direct trades use demand and survival reserves; an accepted explicit offer authorizes the exact exchange.
 - **Share news:** transmits an unverified, sourced report only to the recipient. Private knowledge does not become globally known. Speaking also creates uncertain reported knowledge and individual memories. No automatic truth or obedience is implied.
 - **Negotiate/Retreat/Defend/Fight:** choose your response to an actual dispute. Dispute voluntarily initiates a player encounter. Health, stamina, range, equipment, witnesses, guards and watchtowers have engine-owned consequences. No gore or forced random wars.
+- **God Mode:** open the dedicated panel for regional drought/weather, temperature/intensity/duration, time/season/speed, wildlife and optional threats. Changes alter actual simulation conditions and persist in history. Survival and Industry tabs in More Actions expose the new resource chains; see the [play guide](docs/genesis3.md).
 - **Observer controls:** pause, step, speed, inspect events, and switch modes. Reason Now requests cognition for one inhabitant. If a paused world's reasoning budget is exhausted, dialogue reports this instead of waiting forever; advance time or raise the budget.
 
 Settlements can physically transport and exchange relative surpluses, complete council-approved group projects, and enact sharing/rationing/defense policies. Farms, workshops, storage, halls, wells, markets, roads and watchtowers have mechanical effects. Weather, day/night, seasons and vegetation stages affect local conditions. Agents can teach skills and reported knowledge; two predefined practical research methods improve farms or construction through real resource costs. These methods are extensible definitions, not unrestricted invention.
@@ -69,7 +70,7 @@ python3 -m genesis.server --help
 
 Default save: `data/world.sqlite`. Autosave occurs every 100 ticks; Save/Load are in the client. Ctrl-C saves normal backend shutdown. `--seed 42 --population 10` selects generation settings for **new saves** (population is per settlement). Existing saves take precedence. Use a different `--save` path or New World to generate again; save first before replacing a world. Unknown or corrupt save formats report errors instead of overwriting data silently.
 
-Version-1 worlds migrate by defaulting new fields. Snapshots retain RNG/path state, needs, private cognition/plans, active conversations, offers, cargo, projects and conflicts. In-memory events are bounded; a running Simulation incrementally archives all events to SQLite `history`. Direct `World` embedding retains only recent events unless a sink is attached. Long event archives consume disk, not growing working memory.
+Version-1 worlds migrate by defaulting new fields; new saves write version 2. Snapshots retain RNG/path state, needs, private cognition/plans, active conversations, offers, cargo, projects and conflicts. In-memory events are bounded; a running Simulation incrementally archives all events to SQLite `history`. Direct `World` embedding retains only recent events unless a sink is attached. Long event archives consume disk, not growing working memory.
 
 The local HTTP bridge exposes `GET /health`, `GET /state`, and `POST /command`. Commands are validated; model proposals cannot set inventories, coordinates, HP, or relationships directly. A storage/engine worker failure pauses the world and appears in health/state instead of silently reporting success.
 
