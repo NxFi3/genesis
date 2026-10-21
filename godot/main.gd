@@ -271,6 +271,10 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     var cognition: Dictionary = state.get("cognition", {})
     var metrics: Dictionary = cognition.get("metrics", {})
     var config: Dictionary = cognition.get("config", {})
+    cognition_stats.tooltip_text = str(metrics.get("last_error", ""))
+    cognition_stats.mouse_filter = Control.MOUSE_FILTER_PASS
+    if not str(state.get("error", "")).is_empty():
+        status_label.text = "Simulation paused: " + str(state.error)
     cognition_stats.text = "%s • %s / %s • queued %d • active %d • completed %d • failed %d • %.0f ms • %.1f calls/min" % [str(cognition.get("mode", "offline")).to_upper(), config.get("provider", "disabled"), config.get("model", "no model"), metrics.get("queued", 0), metrics.get("inflight", 0), metrics.get("completed", 0), metrics.get("failed", 0), metrics.get("latency_ms", 0), metrics.get("throughput_per_minute", 0)]
     var lines: Array[String] = []
     for e in state.events.slice(maxi(0, state.events.size()-30)):

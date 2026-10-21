@@ -19,6 +19,8 @@ SCHEMAS = {
     'talk': {'target': 'nearby agent id', 'message': 'natural-language speech'},
     'share': {'target': 'nearby agent id', 'claim': 'a claim already in your knowledge'},
     'teach': {'target': 'nearby agent id', 'topic': 'known skill or knowledge'},
+    'research': {'technology': 'crop_rotation/efficient_joinery (skill level 2, workshop and personal materials)'},
+    'help': {'target': 'nearby agent id', 'kind': 'food/water', 'amount': 'positive number up to three'},
     'specialize': {'occupation': 'gatherer/builder/guard/farmer/miner/trader/craftsperson'},
     'propose': {'policy': 'share_surplus/rationing/open_trade/defense', 'kind': 'optional building project type'},
     'vote': {'proposal': 'proposal id', 'approve': 'boolean'},

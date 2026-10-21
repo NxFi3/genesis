@@ -41,7 +41,7 @@ def agreement_action(world, actor, command):
     if distance(actor, proposer) > 2:
         return fail('Both participants must meet to exchange goods')
     # Explicit acceptance is still subject to mechanical ownership and stock checks.
-    if not world.trade(proposer, actor, agreement['offered'], agreement['wanted'], agreement['amount']):
+    if not world.trade(proposer, actor, agreement['offered'], agreement['wanted'], agreement['amount'], accepted=True):
         return fail('Exchange cannot execute: stock or demand changed')
     agreement['state'] = 'fulfilled'
     for person in (actor, proposer):

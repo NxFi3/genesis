@@ -22,6 +22,8 @@ def execute(world, command, actor_id='player', planned=False):
         if action == 'move':
             entity = next((collection.get(command.get('target')) for collection in
                            (world.agents, world.resources, world.buildings, world.settlements) if command.get('target') in collection), None)
+            if entity and planned and entity.id != a.home and entity.id not in a.observations and entity.id not in a.property and combat.distance(a, entity) > 9:
+                return fail('Destination is not in current perception or remembered geography')
             if entity:
                 x, y = entity.x, entity.y
             elif 'x' in command and 'y' in command:
@@ -39,6 +41,8 @@ def execute(world, command, actor_id='player', planned=False):
                 return fail('No traversable path or insufficient stamina')
             return done(planned and math.hypot(a.x-x, a.y-y) > .3)
         if action in ('rest', 'sleep'):
+            if action == 'sleep' and not any(b.complete and b.condition > 0 and b.kind in ('house', 'hall') and combat.distance(a, b) <= 2 for b in world.buildings.values()):
+                return fail('Sleep requires nearby completed shelter; rest is possible outdoors')
             a.activity = action
             if planned:
                 combat.recover(a, True)
@@ -67,27 +71,34 @@ def execute(world, command, actor_id='player', planned=False):
         if action == 'build':
             if world.construct(a, command.get('kind', 'farm'), command.get('x'), command.get('y')):
                 return done()
-            return fail('Construction requires a valid site, unbuilt type, and enough settlement materials')
+            from .world import BUILDINGS
+            required = {k: v for k, v in BUILDINGS.get(command.get('kind', 'farm'), {}).items() if k in a.inventory}
+            return fail(f'Construction failed: costs {required}; check available materials, site, ownership and duplicate building type')
         if action == 'work':
             s = world.settlements[a.home]
-            if combat.distance(a, s) > 2 or a.stamina < 3:
-                return fail('Construction work requires home proximity and stamina')
+            if a.stamina < 3:
+                return fail('Construction work requires stamina')
             b = world.buildings.get(command.get('building'))
             if command.get('building') and b is None:
                 return fail('Unknown construction project')
             if b is None:
-                b = next((b for b in world.buildings.values() if b.home == a.home and not b.complete), None)
+                b = min((b for b in world.buildings.values() if b.home == a.home and not b.complete), key=lambda b: combat.distance(a, b), default=None)
             if not b or b.home != a.home:
                 return fail('No authorized construction project')
+            if combat.distance(a, b) > 2:
+                return fail('Work requires proximity to the actual construction site')
             if b.complete:
                 return done()
             from .world import BUILDINGS
-            b.progress += 1 + max(0, a.skills['build']-1)*.1
+            from .technology import modifier
+            b.progress += (1 + max(0, a.skills['build']-1)*.1)*modifier(world, a.home, 'construction')
             a.skills['build'] = min(5, a.skills['build']+.005)
             a.stamina -= 3
             a.activity = 'build'
             if b.progress >= BUILDINGS[b.kind]['duration']:
                 b.complete = True
+                if b.kind in ('road', 'bridge'):
+                    world.terrain[round(b.y)][round(b.x)] = 'road'
                 world.stats['built'] += 1
                 world.event('built', f'{s.name} completed a {b.kind}.', [a.id])
             return done(planned and not b.complete)
@@ -101,6 +112,10 @@ def execute(world, command, actor_id='player', planned=False):
             source, destination = (a.inventory, s.inventory) if action == 'store' else (s.inventory, a.inventory)
             if action == 'store' and sum(s.inventory.values())+amount > world.capacity(s):
                 return fail('Store capacity exceeded')
+            if action == 'retrieve' and not world.governance.get(s.id, {}).get('sharing', True) and a.id not in s.council:
+                emergency = kind in ('food', 'water') and getattr(a, 'hunger' if kind == 'food' else 'thirst') > 75 and amount <= 1
+                if not emergency:
+                    return fail('Council policy restricts shared withdrawals; emergency aid permits one unit')
             if action == 'retrieve' and s.policy == 'rationing' and kind in ('food', 'water') and amount > 3:
                 return fail('Council rationing limits withdrawals to three units')
             if world.transfer(source, destination, kind, amount):
@@ -164,6 +179,16 @@ def execute(world, command, actor_id='player', planned=False):
             else:
                 ok = callback(a, command.get('destination'), command.get('offered', 'wood'), command.get('wanted', 'metal'), float(command.get('amount', 2)))
             return done() if ok else fail(f'{action} refused: unmet capability, ownership, proximity, or resource preconditions')
+        if action == 'research':
+            from .technology import research
+            return done() if research(world, a, command.get('technology')) else fail('Research requires a supported method, skill, workshop, stamina and personal materials')
+        if action == 'help':
+            kind, amount = command.get('kind', 'food'), float(command.get('amount', 1))
+            if target and target.id != a.id and combat.distance(a, target) <= 2 and 0 < amount <= 3 and kind in ('food', 'water') and world.transfer(a.inventory, target.inventory, kind, amount):
+                world.relate(target, a, .03)
+                world.event('help', f'{a.name} supplied {amount:g} {kind} to {target.name}.', [a.id, target.id])
+                return done()
+            return fail('Help requires a nearby recipient and owned food or water (up to three units)')
         if action == 'specialize':
             occupation = command.get('occupation')
             if occupation not in ('gatherer', 'builder', 'guard', 'farmer', 'miner', 'trader', 'craftsperson'):

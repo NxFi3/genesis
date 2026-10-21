@@ -30,10 +30,12 @@ class InferenceConfig:
             raise ValueError('enabled must be boolean')
         if self.provider not in ('ollama', 'openai'):
             raise ValueError('Provider must be ollama or openai')
+        if not isinstance(self.endpoint, str) or len(self.endpoint) > 2048:
+            raise ValueError('Endpoint must be bounded URL text')
         url = urlparse(self.endpoint)
         if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password:
             raise ValueError('Endpoint must be an HTTP(S) URL without embedded credentials')
-        if not self.model or len(self.model) > 200:
+        if not isinstance(self.model, str) or not self.model or len(self.model) > 200:
             raise ValueError('Model name is required (max 200 characters)')
         for name, low, high in [('context_limit', 6000, 64000), ('max_concurrency', 1, 8),
                                 ('per_agent_budget', 1, 100), ('global_budget', 1, 1000),
@@ -43,7 +45,7 @@ class InferenceConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
                 raise ValueError(f'{name} must be an integer in {low}..{high}')
-        if not isinstance(self.timeout, (int, float)) or not math.isfinite(self.timeout) or not .05 <= self.timeout <= 120:
+        if isinstance(self.timeout, bool) or not isinstance(self.timeout, (int, float)) or not math.isfinite(self.timeout) or not .05 <= self.timeout <= 120:
             raise ValueError('timeout must be .05..120 seconds')
         return self
 

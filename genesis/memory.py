@@ -34,13 +34,17 @@ def perceive(world, agent):
     for resource in resources:
         agent.observations[resource.id] = {'id': resource.id, 'kind': resource.kind, 'x': resource.x, 'y': resource.y,
                                          'quantity': round(resource.quantity, 2), 'observed_tick': world.tick}
+    for settlement in world.settlements.values():
+        if settlement.id == agent.home or distance(agent, settlement) <= 9:
+            agent.observations[settlement.id] = {'id': settlement.id, 'kind': 'settlement', 'name': settlement.name, 'x': settlement.x, 'y': settlement.y, 'observed_tick': world.tick}
     # Geography may be remembered, resource quantities are explicitly old observations.
     agent.observations = dict(list(agent.observations.items())[-80:])
     return {'location': [round(agent.x, 2), round(agent.y, 2)], 'tick': world.tick,
             'season': world.season, 'day_phase': getattr(world, 'day_phase', 'day'),
             'nearby_agents': [{'id': a.id, 'name': a.name, 'home': a.home, 'activity': a.activity,
                                'x': round(a.x, 2), 'y': round(a.y, 2)} for a in nearby],
-            'resources': list(agent.observations.values()),
+            'resources': [x for key, x in agent.observations.items() if key in world.resources],
+            'known_places': [x for key, x in agent.observations.items() if key in world.settlements],
             'buildings': [{'id': b.id, 'kind': b.kind, 'complete': b.complete, 'x': b.x, 'y': b.y} for b in buildings]}
 
 
@@ -60,6 +64,7 @@ def context(world, agent, query='', limit=12000):
     # Stores are visible only when physically visiting the settlement store.
     if distance(agent, home) <= 3:
         state['settlement']['stores'] = dict(home.inventory)
+        state['settlement']['public_methods'] = world.governance.get(home.id, {}).get('technology', [])
     # Trim whole records, never truncate into invalid JSON.
     for key in ('memories', 'knowledge', 'relationships', 'perception'):
         if len(json.dumps(state)) <= limit:

@@ -256,8 +256,10 @@ class World:
         if kind not in BUILDINGS or agent.incapacitated:
             return False
         s = self.settlements[agent.home]
-        if combat.distance(agent, s) > 2:
+        nearby_store = combat.distance(agent, s) <= 2
+        if not nearby_store and kind not in ('road', 'bridge'):
             return False
+        materials = s.inventory if nearby_store else agent.inventory
         bid = f'{s.id}_{kind}'
         if bid in self.buildings:
             if kind not in ('house', 'storage', 'road', 'bridge'):
@@ -283,12 +285,14 @@ class World:
         if any(b.x == x and b.y == y for b in self.buildings.values()):
             return False
         recipe = BUILDINGS[kind]
-        if any(s.inventory[k] < v for k, v in recipe.items() if k in s.inventory):
+        if any(materials[k] < v for k, v in recipe.items() if k in materials):
             return False
         for k, v in recipe.items():
-            if k in s.inventory:
-                s.inventory[k] -= v
+            if k in materials:
+                materials[k] -= v
         self.buildings[bid] = Building(bid, kind, s.id, x, y)
+        if not nearby_store:
+            agent.property.append(bid)
         self.event('construction', f'{agent.name} started a {kind}; materials reserved.', [agent.id])
         return True
 
@@ -302,12 +306,21 @@ class World:
         destination[kind] += amount
         return True
 
-    def trade(self, a, b, offered='wood', wanted='food', amount=2):
+    def trade(self, a, b, offered='wood', wanted='food', amount=2, accepted=False):
         if (a.id == b.id or a.incapacitated or b.incapacitated or combat.distance(a, b) > 2
                 or not math.isfinite(amount) or amount <= 0 or offered == wanted or offered not in a.inventory or wanted not in b.inventory):
             return False
         if a.inventory[offered] < amount or b.inventory[wanted] < amount:
             return False
+        if not accepted:
+            # Recipient independently values a scarce incoming good and protects survival stock.
+            reserve = (3 if b.hunger > 45 else 1) if wanted == 'food' else ((3 if b.thirst > 45 else 1) if wanted == 'water' else 0)
+            if b.inventory[wanted]-amount < reserve:
+                return False
+            value_in = 1/(1+b.inventory[offered])
+            value_out = 1/(1+b.inventory[wanted])
+            if value_in < value_out*.5:
+                return False
         self.transfer(a.inventory, b.inventory, offered, amount)
         self.transfer(b.inventory, a.inventory, wanted, amount)
         self.stats['traded'] += amount * 2
@@ -385,6 +398,10 @@ class World:
             if a.activity == 'sleep':
                 a.fatigue = max(0, a.fatigue-3)
                 a.shelter = max(0, a.shelter-8)
+            return
+        if any(c.get('state') == 'active' and a.id in c.get('participants', []) and self.tick-c.get('updated', self.tick) <= 150 for c in self.conversations.values()):
+            a.activity, a.reason = 'converse', 'Listening to a nearby conversation; survival still takes priority'
+            a.social = max(0, a.social-.5)
             return
         from .planning import execute_plan
         if execute_plan(self, a):
@@ -536,7 +553,8 @@ class World:
                 if b.kind in ('road', 'bridge'):
                     self.terrain[round(b.y)][round(b.x)] = 'road'
                 if b.kind == 'farm':
-                    amount = min(5*factor*max(.1, b.condition/100), max(0, self.capacity(s)-sum(s.inventory.values())))
+                    from .technology import modifier
+                    amount = min(5*factor*max(.1, b.condition/100)*modifier(self, s.id, 'farm_yield'), max(0, self.capacity(s)-sum(s.inventory.values())))
                     s.inventory['food'] += amount
                     self.stats['produced'] += amount
                 if b.kind == 'well':
@@ -588,6 +606,8 @@ class World:
                 continue
             s = self.settlements[proposal['settlement']]
             for aid in s.council:
+                if self.cognition_config.get('enabled') and self.tick-proposal['tick'] < 10:
+                    continue
                 if aid in proposal['votes']:
                     continue
                 voter = self.agents[aid]
@@ -783,7 +803,7 @@ class World:
                     a.incapacitated = a.hp <= 0
                 if not self.active(a.id):
                     if a.player:
-                        combat.recover(a, a.activity == 'rest' or a.incapacitated)
+                        combat.recover(a, a.activity in ('rest', 'sleep') or a.incapacitated)
                     else:
                         shipment = next((s for s in self.shipments.values() if s['courier'] == a.id and s['state'] in ('in_transit', 'returning')), None)
                         if shipment and a.hunger < 45 and a.thirst < 45 and a.stamina >= 25 and a.fatigue < 75:
@@ -834,4 +854,5 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
-        return w
+        from .validation import validate_world
+        return validate_world(w)

@@ -3,7 +3,8 @@
 Only pump(), called under Simulation.lock, may mutate the world. Worker threads
 operate on detached JSON and return proposals; every resulting action is validated.
 """
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
+import threading
 from dataclasses import dataclass, field
 import heapq
 import itertools
@@ -32,6 +33,60 @@ SYSTEM = (
 )
 
 
+class InferenceWorkers:
+    """Scheduler bounds active work; daemon threads cannot strand process shutdown.
+
+    Running network calls are logically cancelled by epoch and retain their HTTP
+    timeout. They hold detached data only, never simulation objects or DB handles.
+    """
+    def submit(self, function, *arguments):
+        future = Future()
+        def invoke():
+            if future.set_running_or_notify_cancel():
+                try:
+                    future.set_result(function(*arguments))
+                except BaseException as exc:
+                    future.set_exception(exc)
+        threading.Thread(target=invoke, name='genesis-inference', daemon=True).start()
+        return future
+
+    def shutdown(self, **_):
+        pass
+
+
+def fit_context(payload, limit):
+    """Bound the complete serialized user message, preserving valid JSON and IDs."""
+    data = json.loads(json.dumps(payload))
+    def size():
+        return len(SYSTEM)+len(json.dumps(data, ensure_ascii=False))
+    turns = data.get('conversation', {}).get('turns', [])
+    while len(turns) > 2 and size() > limit:
+        turns.pop(0)
+    if size() > limit:
+        for turn in turns:
+            turn['text'] = turn['text'][-600:]
+        data['pending_offers'] = data.get('pending_offers', [])[-2:]
+    if size() > limit:
+        agent = data['agent']
+        for key in ('memories', 'knowledge', 'long_term_goals', 'commitments', 'plan'):
+            if key in agent:
+                agent[key] = agent[key][-2:]
+        agent['reflection'] = agent.get('reflection', '')[-300:]
+        if 'perception' in agent:
+            agent['perception']['resources'] = agent['perception'].get('resources', [])[-3:]
+            agent['perception']['nearby_agents'] = agent['perception'].get('nearby_agents', [])[:3]
+    if size() > limit:
+        data.pop('capabilities', None)
+        original = data['agent']
+        data['agent'] = {key: original[key] for key in ('identity', 'needs', 'inventory', 'location', 'failure') if key in original}
+        data['pending_offers'] = []
+        for turn in turns:
+            turn['text'] = turn['text'][-300:]
+    if size() > limit:
+        raise ValueError('Cannot fit the minimal private context within configured budget')
+    return data
+
+
 @dataclass(order=True)
 class Request:
     priority: int
@@ -49,7 +104,7 @@ class Scheduler:
     def __init__(self, config=None, provider=None):
         self.config = (config or InferenceConfig()).validate()
         self.provider = provider or generate
-        self.executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix='genesis-cognition')
+        self.executor = InferenceWorkers()
         self.queue = []
         self.inflight = {}
         self.serial = itertools.count(1)
@@ -103,14 +158,17 @@ class Scheduler:
         # Schema/system and recent conversation also consume the total context budget.
         allowance = max(1600, self.config.context_limit-len(SYSTEM)-len(json.dumps(SCHEMAS))-3000)
         private = context(world, agent, reason, allowance)
+        from .world import BUILDINGS, RECIPES
+        from .technology import TECHNOLOGIES
         data = {'reason': reason, 'agent': private, 'action_schemas': SCHEMAS,
+                'capabilities': {'building_costs': {kind: {k: v for k, v in recipe.items() if k in agent.inventory or k == 'duration'} for kind, recipe in BUILDINGS.items()}, 'recipes': RECIPES, 'practical_methods': TECHNOLOGIES},
                 'pending_offers': [x for x in world.agreements.values() if x['state'] == 'proposed' and aid in (x['proposer'], x['recipient'])][-6:]}
         if conversation:
             c = world.conversations[conversation]
             data['conversation'] = {'id': c['id'], 'participants': c['participants'], 'turns': c['turns'][-6:]}
         heapq.heappush(self.queue, Request(priority, next(self.serial), aid,
                                          'conversation' if conversation else 'plan', self.epoch,
-                                         agent.cognition_revision, world.tick, json.loads(json.dumps(data)), conversation))
+                                         agent.cognition_revision, world.tick, fit_context(data, self.config.context_limit), conversation))
         return True
 
     def speak(self, world, speaker_id, target_id, message, source='player'):
@@ -119,6 +177,8 @@ class Scheduler:
             raise ValueError('Speakers must be conscious and within three tiles')
         if not self.config.enabled:
             raise ValueError('LLM mode is disabled; enable it in settings or with --ollama')
+        if self.window == world.tick//self.config.budget_window and (self.global_used >= self.config.global_budget or self.budgets.get(target_id, 0) >= self.config.per_agent_budget):
+            raise ValueError('Reasoning budget exhausted; advance the simulation to a new budget window or raise the budget in settings')
         existing = next((c for c in reversed(list(world.conversations.values())) if set(c['participants']) == {speaker_id, target_id} and c['state'] == 'waiting_player'), None)
         if existing:
             c = existing
@@ -266,7 +326,7 @@ class Scheduler:
                     continue
                 seen = self.events_seen.get(agent.id, 0)
                 important = any(e['id'] > seen and agent.id in e['actors'] and e['kind'] in
-                                ('claim', 'conflict_start', 'offer', 'help', 'plan_failed', 'dialogue') for e in world.events[-80:])
+                                ('claim', 'conflict_start', 'witness', 'offer', 'help', 'plan_failed', 'dialogue', 'proposal', 'council_decision') for e in world.events[-80:])
                 if world.events:
                     self.events_seen[agent.id] = world.events[-1]['id']
                 if important or (world.tick >= agent.next_reason_tick and (agent.plan_status != 'active' or world.tick-agent.last_reasoned >= self.config.reasoning_interval*3)):
@@ -280,7 +340,13 @@ class Scheduler:
                 self.metrics['stale'] += 1
                 continue
             if self.budgets.get(job.agent, 0) >= self.config.per_agent_budget or self.global_used >= self.config.global_budget:
-                deferred.append(job)
+                if job.conversation:
+                    conversation = world.conversations.get(job.conversation)
+                    if conversation:
+                        conversation['state'] = 'failed'
+                        conversation['error'] = 'Reasoning budget exhausted; advance time or increase the configured budget'
+                else:
+                    deferred.append(job)
                 continue
             self.budgets[job.agent] = self.budgets.get(job.agent, 0)+1
             self.global_used += 1

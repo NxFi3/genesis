@@ -7,6 +7,7 @@ from pathlib import Path
 import threading
 import time
 import sqlite3
+import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .world import World
 from . import persistence, actions, combat
@@ -33,7 +34,9 @@ class Simulation:
         self.cognition = Scheduler(config, provider)
         self.pending_history = []
         self.last_error = ''
+        self.worker_alive = False
         self.attach_world()
+        self.pending_history.extend(self.world.events)
 
     def attach_world(self):
         self.world.event_sink = self.record_event
@@ -64,17 +67,27 @@ class Simulation:
 
     def run(self):
         last = time.monotonic()
-        while self.running:
-            time.sleep(.02)
-            now = time.monotonic()
-            with self.lock:
-                self.cognition.pump(self.world, schedule=not self.paused)
-                if not self.paused and now-last >= 1/self.speed:
-                    started = time.perf_counter()
-                    self.advance()
-                    self.last_ms = (time.perf_counter()-started)*1000
-                    last = now
-
+        self.worker_alive = True
+        try:
+            while self.running:
+                time.sleep(.02)
+                now = time.monotonic()
+                with self.lock:
+                    try:
+                        if not self.last_error:
+                            self.cognition.pump(self.world, schedule=not self.paused)
+                        if not self.paused and now-last >= 1/self.speed:
+                            started = time.perf_counter()
+                            self.advance()
+                            self.last_ms = (time.perf_counter()-started)*1000
+                            last = now
+                    except Exception as exc:
+                        # Keep diagnostics/control available and stop mutations after an
+                        # unexpected engine/storage failure instead of silently losing the worker.
+                        self.last_error = f'{type(exc).__name__}: {str(exc)[:300]}'
+                        self.paused = True
+        finally:
+            self.worker_alive = False
 
     def command(self, command):
         if not isinstance(command, dict):
@@ -83,6 +96,8 @@ class Simulation:
         with self.lock:
             if action == 'pause':
                 self.paused = bool(command.get('paused', True))
+                if not self.paused:
+                    self.last_error = ''
                 return {'ok': True}
             if action == 'speed':
                 value = float(command['speed'])
@@ -108,6 +123,7 @@ class Simulation:
                 self.pending_history.clear()
                 self.world = new_world
                 self.attach_world()
+                self.pending_history.extend(self.world.events)
                 return {'ok': True, 'message': 'New world created; save to retain it'}
             if action == 'step':
                 self.advance(min(100, max(1, int(command.get('count', 1)))))
@@ -154,9 +170,10 @@ def serve(sim, host='127.0.0.1', port=8765):
             if self.path not in ('/state', '/health'):
                 return self.send(404, {'error': 'Unknown endpoint'})
             with sim.lock:
-                state = {'ok': True, 'tick': sim.world.tick, 'pid': os.getpid()} if self.path == '/health' else sim.world.snapshot()
+                state = {'ok': sim.worker_alive and not bool(sim.last_error), 'tick': sim.world.tick, 'pid': os.getpid(), 'worker_alive': sim.worker_alive} if self.path == '/health' else sim.world.snapshot()
                 state.update(paused=sim.paused, speed=sim.speed, tick_ms=sim.last_ms, cognition=sim.cognition.status(), error=sim.last_error)
-                self.send(200, state)
+                state = copy.deepcopy(state)
+            self.send(200, state)
 
         def do_POST(self):
             if self.path != '/command':
@@ -192,7 +209,7 @@ def main():
     p.add_argument('--save', default='data/world.sqlite')
     p.add_argument('--ticks', type=int, help='Headless run, save, then exit')
     modes = p.add_mutually_exclusive_group()
-    modes.add_argument('--ollama', action='store_true', help='Enable shared LLM cognition')
+    modes.add_argument('--ollama', '--llm', action='store_true', help='Enable shared LLM cognition')
     modes.add_argument('--offline', action='store_true', help='Force deterministic mode, overriding saved settings')
     p.add_argument('--provider', choices=['ollama', 'openai'])
     p.add_argument('--endpoint', default=os.environ.get('GENESIS_OLLAMA_URL'))
