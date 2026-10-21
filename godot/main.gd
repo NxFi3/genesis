@@ -3,7 +3,9 @@ extends Control
 var api := "http://127.0.0.1:8765"
 const MAP_RECT := Rect2(24, 130, 864, 516)
 const UIStyle = preload("res://ui_style.gd")
-const WorldView = preload("res://world_view.gd")
+const WorldView = preload("res://world_3d.gd")
+const FlatView = preload("res://world_view.gd")
+var flat_renderer := false
 var state: Dictionary = {}
 var selected := "a0"
 var player_mode := true
@@ -55,6 +57,7 @@ var journal_open := false
 
 func _ready() -> void:
     for argument in OS.get_cmdline_user_args():
+        if argument == "--flat": flat_renderer = true
         if argument.begins_with("--capture="):
             capture_path = argument.trim_prefix("--capture=")
         if argument.begins_with("--api="):
@@ -112,7 +115,7 @@ func _make_ui() -> void:
         panel.add_theme_stylebox_override("panel", UIStyle.box(Color("172923"), Color("43584a"), 9))
         panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(panel)
-    label_at("G E N E S I S  2", Vector2(24, 14), 28).modulate = Color("e3ce9a")
+    label_at("G E N E S I S  3", Vector2(24, 14), 28).modulate = Color("e3ce9a")
     label_at("THE LIVING WORLD  /  A chronicle of two settlements", Vector2(305, 28), 14)
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
@@ -134,7 +137,7 @@ func _make_ui() -> void:
     clip.clip_contents = true
     clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(clip)
-    view = WorldView.new()
+    view = FlatView.new() if flat_renderer else WorldView.new()
     view.view_size = MAP_RECT.size
     clip.add_child(view)
     selector = OptionButton.new()
@@ -257,7 +260,7 @@ func _process(delta: float) -> void:
                 player_command({"action": "move", "dx": int(direction.x), "dy": int(direction.y)})
             elif not player_mode:
                 view.follow_agent = false
-                view.camera_offset -= direction.normalized() * delta * 250
+                view.pan(-direction.normalized()*delta*250)
     if auto_smoke:
         smoke_frames += 1
         if not state.is_empty() and smoke_frames > 30:
@@ -271,7 +274,7 @@ func _process(delta: float) -> void:
             assert(view.zoom > old_zoom)
             view.focus_selected()
             assert(view.zoom >= 1.3)
-            assert(view.terrain_layer.redraw_count > 0)
+            assert(view.terrain_layer.redraw_count > 0 if flat_renderer else view.terrain_revision > 0)
             assert(theme != null)
             assert(details.bbcode_enabled)
             journal.popup_centered()
@@ -304,7 +307,7 @@ func _process(delta: float) -> void:
             assert(not player_mode)
             _toggle_mode()
             assert(player_mode)
-            print("GENESIS 2 client smoke passed: live state, inspector, inventory, camera, modes, cognition settings and action panels")
+            print("GENESIS 3 client smoke passed: live state, inspector, inventory, camera, modes, cognition settings and action panels")
             auto_smoke = false
             _finish_smoke()
         elif smoke_frames > 1200:
@@ -651,7 +654,7 @@ func _unhandled_input(event: InputEvent) -> void:
             elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
                 view.zoom_at(1/1.15, event.position - MAP_RECT.position)
             elif event.button_index == MOUSE_BUTTON_LEFT and placing_site:
-                var world_position: Vector2 = ((event.position - MAP_RECT.position) - view.camera_offset) / view.zoom / WorldView.TILE
+                var world_position: Vector2 = view.screen_to_tile(event.position-MAP_RECT.position)
                 action_fields.site_x.value = floorf(world_position.x)
                 action_fields.site_y.value = floorf(world_position.y)
                 action_fields.use_site.button_pressed = true
@@ -668,7 +671,7 @@ func _unhandled_input(event: InputEvent) -> void:
                 _inspect()
     elif event is InputEventMouseMotion and panning:
         view.follow_agent = false
-        view.camera_offset += event.relative
+        view.pan(event.relative)
 
 func action_row(box: VBoxContainer, caption: String) -> HBoxContainer:
     var row := HBoxContainer.new()

@@ -297,3 +297,10 @@ func draw_animal(a: Dictionary) -> void:
     else:
         draw_colored_polygon(PackedVector2Array([p+Vector2(5,-7),p+Vector2(5,-12),p+Vector2(8,-7)]),fur)
     if a.id == selected: draw_arc(p,12,0,TAU,24,CREAM,1.5,true)
+
+func pan(pixels: Vector2) -> void:
+    follow_agent = false
+    camera_offset += pixels
+
+func screen_to_tile(point: Vector2) -> Vector2:
+    return (point-camera_offset)/zoom/TILE

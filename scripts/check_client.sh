@@ -10,3 +10,4 @@ genesis_godot=$(command -v godot || command -v godot4)
 "$genesis_godot" --headless --path godot -- --smoke "--api=${1:-http://127.0.0.1:8765}"
 
 "$genesis_godot" --headless --path godot --script res://tests/presentation_check.gd
+"$genesis_godot" --headless --path godot --script res://tests/isometric_check.gd
