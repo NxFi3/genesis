@@ -29,6 +29,13 @@ SCHEMAS = {
     'conflict_response': {'target': 'opponent id', 'choice': 'negotiate/avoid/retreat/defend/fight'},
 }
 SCHEMAS.update({
+    'propose_union': {'target':'familiar nearby unrelated adult id'},
+    'accept_union': {'target':'adult proposer id; mutual consent at a shared residence'},
+    'decline_union': {'target':'adult proposer id'},
+    'leave_union': {}, 'create_household': {},
+    'household_transfer': {'direction':'deposit/withdraw','kind':'resource','amount':'positive quantity','household':'optional owned household id'},
+    'family_plan': {'target':'mutual adult partner id','choice':'raise_child/not_now'},
+    'inherit': {'estate':'deceased person id','kind':'owned resource','amount':'positive quantity'},
     'threat_response': {'target': 'recent observed/reported threat id', 'choice': 'flee/shelter/request_help/defend/cooperate'},
     'warn': {'target': 'recent observed/reported threat id; local alarm, not dialogue'},
     'report_threat': {'target': 'nearby conversation partner id', 'threat': 'threat id in your recent private observations'},
@@ -93,7 +100,7 @@ def validate_plan(data):
     if not isinstance(dialogue_actions, list) or len(dialogue_actions) > 2:
         raise ValueError('At most two dialogue actions may be proposed per turn')
     for action in dialogue_actions:
-        if not isinstance(action, dict) or action.get('action') not in ('offer', 'accept', 'reject', 'help', 'teach', 'share', 'commit_work', 'conflict_response', 'report_threat'):
+        if not isinstance(action, dict) or action.get('action') not in ('offer', 'accept', 'reject', 'help', 'teach', 'share', 'commit_work', 'conflict_response', 'report_threat','propose_union','accept_union','decline_union','family_plan'):
             raise ValueError('Unsupported dialogue action')
     if dialogue_actions:
         # Reuse exactly the same flat argument validation as ordinary plans.

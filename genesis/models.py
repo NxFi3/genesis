@@ -9,6 +9,16 @@ class Agent:
     y: float
     home: str
     age: int = 25
+    birth_tick: int | None = None
+    life_stage: str = 'adult'
+    household: str | None = None
+    residence: str | None = None
+    parents: list = field(default_factory=list)
+    children: list = field(default_factory=list)
+    partner: str | None = None
+    appearance: dict = field(default_factory=dict)
+    family_history: list = field(default_factory=list)
+    family_intent: dict = field(default_factory=dict)
     hp: float = 100
     max_hp: float = 100
     stamina: float = 100

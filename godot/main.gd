@@ -5,6 +5,8 @@ const MAP_RECT := Rect2(24, 130, 864, 516)
 const UIStyle = preload("res://ui_style.gd")
 const WorldView = preload("res://world_3d.gd")
 const EnvironmentPanel = preload("res://environment_panel.gd")
+const FamilyPanel = preload("res://family_panel.gd")
+var family_panel: ScrollContainer
 var god_panel: PopupPanel
 const FlatView = preload("res://world_view.gd")
 var flat_renderer := false
@@ -156,6 +158,9 @@ func _make_ui() -> void:
     memory_details = rich_tab(inspector, "Mind")
     inventory_details = rich_tab(inspector, "Player")
     settlement_details = rich_tab(inspector, "Town")
+    family_panel=FamilyPanel.new()
+    family_panel.name="Family"
+    inspector.add_child(family_panel)
     label_at("WASD move / pan · wheel zoom · middle drag · F focus · Home map · F1/F2 towns · P player", Vector2(24, 657), 12)
     label_at("ACTIONS  /  requires reach & supplies", Vector2(910, 552), 12)
     button_at("Gather", Vector2(910, 578), func(): player_command({"action": "gather"}), 80, true)
@@ -438,6 +443,7 @@ func _name(id: String) -> String:
 
 func _inspect() -> void:
     view.selected = selected
+    family_panel.update_world(state,selected)
     var home := "a"
     if state.agents.has(selected):
         var a: Dictionary = state.agents[selected]

@@ -145,12 +145,20 @@ static func building(kind: String, complete: bool, faction: Color) -> Node3D:
             if kind == "hall": part(root,"box",Vector3(.4,.7,-.46),Vector3(.16,.6,.04),faction)
     return root
 
-static func human(faction: Color, occupation: String, player: bool) -> Node3D:
+static func human(faction: Color, occupation: String, player: bool, appearance: Dictionary = {}, life_stage := "adult", equipment: Array = []) -> Node3D:
     var root := Node3D.new()
     var color := Color("e9c67c") if player else faction
     part(root,"cone",Vector3(0,.48,0),Vector3(.38,.55,.3),color)
-    var head := part(root,"sphere",Vector3(0,.86,0),Vector3(.24,.26,.24),Color("d1aa83"))
-    part(root,"sphere",Vector3(0,.94,.02),Vector3(.26,.13,.25),Color("68503d"))
+    var skin := Color("ebc9a3").lerp(Color("77513e"),float(appearance.get("skin",.35)))
+    var head := part(root,"sphere",Vector3(0,.86,0),Vector3(.24,.26,.24),skin)
+    var hair := Color(str(appearance.get("hair","#68503d")))
+    if life_stage=="elder":hair=hair.lerp(Color("c5c7bf"),.7)
+    part(root,"sphere",Vector3(0,.94,.02),Vector3(.26,.13,.25),hair)
+    for x in [-.06,.06]:part(root,"sphere",Vector3(x,.87,-.12),Vector3(.025,.025,.02),Color(str(appearance.get("eyes","#574337"))))
+    if appearance.get("texture","")=="curly":
+        for x in [-.1,0.,.1]:part(root,"sphere",Vector3(x,.98,0),Vector3(.13,.13,.15),hair)
+    if appearance.get("face","")=="angular":head.scale.x*=.9
+    root.scale=Vector3.ONE*float({"infant":.45,"child":.65,"adolescent":.85,"elder":.97}.get(life_stage,1.))
     for x in [-.095,.095]:
         var leg := part(root,"box",Vector3(x,.13,0),Vector3(.10,.28,.12),Color("3e4a43"))
         leg.name = "LegL" if x < 0 else "LegR"
@@ -176,6 +184,8 @@ static func human(faction: Color, occupation: String, player: bool) -> Node3D:
     var cargo:=part(root,"box",Vector3(0,.48,.22),Vector3(.28,.28,.20),Color("ad895a"))
     cargo.name="Cargo"
     cargo.visible=false
+    if occupation!="guard" and "shield" in equipment:part(root,"sphere",Vector3(-.3,.48,-.04),Vector3(.1,.32,.26),Color("b3c0b4"))
+    if occupation!="guard" and "staff" in equipment:part(root,"box",Vector3(.3,.55,0),Vector3(.04,.9,.04),Color("a8b5ab"))
     return root
 
 static func zombie() -> Node3D:

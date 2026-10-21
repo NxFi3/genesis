@@ -18,6 +18,7 @@ from .providers import InferenceConfig, generate
 from .registry import PRODUCTION
 from .social import hear, upkeep
 from .communication import opportunities, dialogue_context
+from .families import adult
 
 SYSTEM = (
     'You are ONE independent human inhabitant in the fictional medieval world GENESIS. '
@@ -82,7 +83,9 @@ def fit_context(payload, limit):
     if size() > limit:
         data.pop('capabilities', None)
         original = data['agent']
-        data['agent'] = {key: original[key] for key in ('identity', 'needs', 'inventory', 'location', 'failure') if key in original}
+        data['agent'] = {key: original[key] for key in ('identity', 'needs', 'inventory', 'location', 'failure','family') if key in original}
+        if 'perception' in original:
+            data['agent']['perception']={key:original['perception'][key] for key in ('tick','climate') if key in original['perception']}
         reports = original.get('perception',{}).get('threat_reports',[])[-2:]
         if reports: data['agent']['threat_reports'] = reports
         data['pending_offers'] = data.get('pending_offers', [])[-1:]
@@ -95,7 +98,7 @@ def fit_context(payload, limit):
             turn['text'] = turn['text'][-300:]
     if size() > limit:
         # A small context exposes a useful subset of schemas instead of losing the reply.
-        keep = ('move', 'observe', 'eat', 'drink', 'rest', 'talk', 'offer', 'accept', 'reject', 'help', 'conflict_response', 'threat_response', 'warn', 'report_threat')
+        keep = ('move', 'observe', 'eat', 'drink', 'rest', 'talk', 'offer', 'accept', 'reject', 'help', 'conflict_response', 'threat_response', 'warn', 'report_threat','propose_union','accept_union','decline_union','family_plan','household_transfer')
         data['action_schemas'] = {k: v for k, v in data.get('action_schemas', {}).items() if k in keep}
         if 'conversation' in data:
             data['conversation']['outcomes'] = data['conversation'].get('outcomes', [])[-2:]
@@ -172,7 +175,7 @@ class Scheduler:
 
     def request(self, world, aid, reason='new goal', priority=5, conversation=None):
         agent = world.agents.get(aid)
-        if not self.config.enabled or self.closed or not agent or agent.player or agent.incapacitated or self._busy(aid) or len(self.queue) >= self.config.max_queue:
+        if not self.config.enabled or self.closed or not agent or not adult(agent) or agent.player or agent.incapacitated or self._busy(aid) or len(self.queue) >= self.config.max_queue:
             return False
         # Schema/system and recent conversation also consume the total context budget.
         allowance = max(1600, self.config.context_limit-len(SYSTEM)-len(json.dumps(SCHEMAS))-3000)
@@ -198,6 +201,7 @@ class Scheduler:
         speaker, target = world.agents.get(speaker_id), world.agents.get(target_id)
         if not speaker or not target or speaker_id == target_id or not isinstance(message, str) or not message.strip():
             raise ValueError('A conversation needs two distinct participants and a nonempty message')
+        if not adult(speaker) or not adult(target):raise ValueError('Dependent children are learning; independent model dialogue begins at adulthood')
         if any(c['state'] == 'active' and set(c['participants']) & {speaker_id, target_id} for c in world.conversations.values()):
             raise ValueError('A participant is already speaking; wait for the current reply')
         if combat.distance(speaker, target) > 3 or speaker.incapacitated or target.incapacitated:
@@ -397,7 +401,7 @@ class Scheduler:
                     del world.conversations[key]
         if schedule:
             for agent in sorted(world.agents.values(), key=lambda a: (a.last_reasoned, a.id)):
-                if agent.player or agent.incapacitated:
+                if agent.player or agent.incapacitated or not adult(agent):
                     continue
                 seen = self.events_seen.get(agent.id, 0)
                 important = any(e['id'] > seen and agent.id in e['actors'] and e['kind'] in

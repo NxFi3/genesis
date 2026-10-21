@@ -13,12 +13,16 @@ def execute(world, command, actor_id='player', planned=False):
     if not a:
         return fail('Unknown actor')
     action = command.get('action')
+    from .families import adult, ACTIONS, action as family_action
+    if not adult(a) and action not in ('move','observe','rest','sleep','eat','drink'):
+        return fail('Dependent children cannot execute adult work, combat or social agreements')
     if a.incapacitated and action not in ('rest', 'eat', 'drink', 'sleep'):
         return fail('Incapacitated; eat, drink and rest to recover.')
     if world.active(a.id) and action not in ('negotiate', 'retreat', 'defend', 'fight', 'avoid', 'conflict_response', 'rest'):
         return fail('Resolve or disengage from the current conflict first.')
     target = world.agents.get(command.get('target'))
     try:
+        if action in ACTIONS:return family_action(world,a,command)
         if action in ('threat_response', 'warn', 'report_threat'):
             from . import threats
             if action == 'threat_response':

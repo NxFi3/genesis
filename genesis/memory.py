@@ -63,6 +63,7 @@ def context(world, agent, query='', limit=12000, partner_id=None):
     relations = sorted(agent.relationships.items(), key=lambda pair: (pair[0] == partner_id, pair[0] in nearby_ids, pair[1].get('familiarity', 0)), reverse=True)[:8]
     state = {'identity': {'id': agent.id, 'name': agent.name, 'personality': agent.personality,
                           'occupation': agent.occupation, 'skills': agent.skills},
+             'family':{'age':agent.age,'stage':agent.life_stage,'household':agent.household,'partner':agent.partner,'parents':agent.parents,'children':agent.children,'intention':agent.family_intent},
              'needs': {k: getattr(agent, k) for k in ('hp', 'stamina', 'hunger', 'thirst', 'fatigue', 'warmth', 'shelter', 'safety', 'social')},
              'inventory': agent.inventory, 'carry_capacity':agent.carry_capacity, 'production_job':world.production_jobs.get(agent.production_job), 'equipment': agent.equipment, 'perception': perception,
              'knowledge': relevant, 'relationships': dict(relations),
@@ -93,5 +94,8 @@ def context(world, agent, query='', limit=12000, partner_id=None):
             state[key] = state[key][:2]
     if len(json.dumps(state)) > limit:
         state = {'identity': state['identity'], 'needs': state['needs'], 'inventory': state['inventory'],
-                 'location': perception['location'], 'failure': agent.plan_error[:200]}
+                 'location': perception['location'], 'failure': agent.plan_error[:200],
+                 'family':state['family'],
+                 'perception':{'tick':world.tick,'climate':perception['climate'],'nearby_agents':perception['nearby_agents'][:2],
+                               'threat_reports':perception.get('threat_reports',[])[:2]}}
     return state

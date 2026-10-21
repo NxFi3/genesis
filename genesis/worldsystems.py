@@ -26,6 +26,8 @@ def initialize(world,new=False):
         if not hasattr(world,name): setattr(world,name,default)
     from .threats import initialize as initialize_threats
     initialize_threats(world)
+    from .families import initialize as initialize_families
+    initialize_families(world)
     for a in world.agents.values(): a.inventory=expand(a.inventory)
     for s in world.settlements.values(): s.inventory=expand(s.inventory)
     for shipment in world.shipments.values(): shipment['cargo']=expand(shipment['cargo'])

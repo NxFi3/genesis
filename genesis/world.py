@@ -8,7 +8,7 @@ import re
 
 from .models import Agent, Settlement, Resource, Building, Wildlife, Conflict
 from . import combat
-from . import environment, registry, survival, production, threats
+from . import environment, registry, survival, production, threats, families
 from .worldsystems import BUILDING_TYPES, initialize
 
 BUILDINGS = {
@@ -268,7 +268,7 @@ class World:
         if a_id == b_id or a_id not in self.agents or b_id not in self.agents:
             return None
         a, b = self.agents[a_id], self.agents[b_id]
-        if a.incapacitated or b.incapacitated or self.active(a_id) or self.active(b_id) or combat.distance(a, b) > 4:
+        if not families.adult(a) or not families.adult(b) or a.incapacitated or b.incapacitated or self.active(a_id) or self.active(b_id) or combat.distance(a, b) > 4:
             return None
         recent = [c for c in self.conflicts.values() if {c.a, c.b} == {a_id, b_id} and c.ended is not None and self.tick - c.ended < 100]
         if recent:
@@ -471,6 +471,7 @@ class World:
                 a.shelter = max(0, a.shelter-8)
             return
         if survival.emergency(self,a): return
+        if families.autonomous(self,a): return
         if any(c.get('state') == 'active' and a.id in c.get('participants', []) and self.tick-c.get('updated', self.tick) <= 150 for c in self.conversations.values()):
             a.activity, a.reason = 'converse', 'Listening to a nearby conversation; survival still takes priority'
             a.social = max(0, a.social-.5)
@@ -887,6 +888,7 @@ class World:
             raise ValueError('Tick count must be an integer in 0..100000')
         for _ in range(count):
             self.tick += 1
+            families.update(self)
             environment.update(self)
             self._ecology()
             survival.update(self)
@@ -906,6 +908,9 @@ class World:
                     a.hp = max(0, a.hp - .4)
                     a.incapacitated = a.hp <= 0
                 if not self.active(a.id):
+                    if not families.adult(a):
+                        families.dependent(self,a)
+                        continue
                     if a.player:
                         if a.extraction.get('auto'):
                             outcome=survival.action(self,a,{'action':a.extraction['action'],'resource':a.extraction['target'],'_continuous':True})
@@ -946,6 +951,7 @@ class World:
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
         result.update(worldgen=self.worldgen,navigation=self.navigation)
+        result.update(demography=self.demography,households=self.households,family_archive=self.family_archive,family_offers=self.family_offers,estates=self.estates,next_person=self.next_person,systems_version=4)
         result['events'] = self.events if full else self.events[-80:]
         if full:
             result['rng_state'] = self.rng.getstate()
@@ -971,7 +977,7 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
-        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation'):
+        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation','demography','households','family_archive','family_offers','estates','next_person'):
             if name in data: setattr(w,name,data[name])
         initialize(w)
         from .validation import validate_world

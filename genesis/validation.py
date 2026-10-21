@@ -3,6 +3,8 @@ import math
 
 
 def validate_world(world):
+    from .families import validate_world as validate_families
+    validate_families(world)
     from .world import BUILDINGS, PASSABLE
     from .registry import RESOURCES, PRODUCTION
     from .environment import WEATHER, SEASONS

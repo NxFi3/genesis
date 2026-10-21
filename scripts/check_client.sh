@@ -12,3 +12,4 @@ genesis_godot=$(command -v godot || command -v godot4)
 "$genesis_godot" --headless --path godot --script res://tests/presentation_check.gd
 "$genesis_godot" --headless --path godot --script res://tests/isometric_check.gd
 "$genesis_godot" --headless --path godot --script res://tests/threat_controls_check.gd
+"$genesis_godot" --headless --path godot --script res://tests/family_check.gd

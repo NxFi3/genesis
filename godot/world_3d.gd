@@ -266,13 +266,13 @@ func _entities() -> void:
     for category in ["agents","wildlife","threats"]:
         for a in state.get(category,{}).values():
             living[a.id] = true
-            var appearance := [category,a.get("occupation",""),a.get("species",""),a.get("home",""),a.get("player",false)]
+            var appearance := [category,a.get("occupation",""),a.get("species",""),a.get("home",""),a.get("player",false),a.get("appearance",{}),a.get("life_stage","adult"),a.get("equipment",[])]
             if models.has(a.id) and appearances[a.id] != appearance:
                 models[a.id].queue_free()
                 models.erase(a.id)
             if not models.has(a.id):
                 var color := Color("7ec4a2") if a.get("home","") == "a" else Color("91b9d6")
-                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false)) if category == "agents" else Art.zombie() if category=="threats" else Art.animal(a.get("species","wolf"))
+                var model: Node3D = Art.human(color,a.get("occupation",""),a.get("player",false),a.get("appearance",{}),a.get("life_stage","adult"),a.get("equipment",[])) if category == "agents" else Art.zombie() if category=="threats" else Art.animal(a.get("species","wolf"))
                 model.name = a.id
                 people.add_child(model)
                 models[a.id] = model
