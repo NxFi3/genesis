@@ -1,8 +1,17 @@
-# GENESIS 3 — The Living World
+# GENESIS 4 — Artificial Society Research Edition
 
-An evolving 2.5D medieval sandbox with independent human agents, a Python simulation, a Godot 4 client, and SQLite persistence. The simulation engine remains authoritative. Shared asynchronous local inference can generate each inhabitant's own goals, executable plans, and conversations; survival and combat continue without a model.
+A persistent artificial-society laboratory with a 2.5D medieval world with independent human agents, a Python simulation, a Godot 4 client, and SQLite persistence. The simulation engine remains authoritative. Shared asynchronous local inference can generate each inhabitant's own goals, executable plans, and conversations; survival and combat continue without a model.
 
-**Integration branch:** `feature/genesis-3-world`, preserving `813447d` and the v2 baseline. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Current validation](docs/validation-v3.md) · [Genesis 3 systems and remaining limits](docs/genesis3.md) · [Development log](docs/development-v3.md).
+**Research integration:** `feature/genesis-4-research`, based on validated Dynamic Threats commit `b479449`. Adds large-world generation/navigation, mutual households, generations and inherited appearance, controlled experiments, provenance-separated analytics and a local research dashboard. This is an incremental research build: underground mining, migration/founding, component invention and renderer chunk streaming remain unfinished. [Research guide](docs/research.md) · [Development log](docs/development-v4.md).
+
+```sh
+python3 -m genesis.experiments experiments/communication.json --output data/research/communication
+python3 -m genesis.dashboard data/research/communication
+```
+
+Open `http://127.0.0.1:8769` for actual recorded charts and comparisons. Ollama remains optional. Offline presets measure deterministic simulation behavior, not model intelligence.
+
+**Preserved Genesis 3 integration branch:** `feature/genesis-3-world`, preserving `813447d` and the v2 baseline. This is a tested development implementation, not a claim that the entire civilization research roadmap is complete. [Current validation](docs/validation-v3.md) · [Genesis 3 systems and remaining limits](docs/genesis3.md) · [Development log](docs/development-v3.md).
 
 **Dynamic threats milestone:** `feature/genesis-dynamic-threats`, based on the validated Genesis 3 build `6c97f9c`. Adds optional nocturnal zombies, territorial wolves, local warnings, individual defensive choices, guarded settlements and original animated threat figures. Zombies remain **off by default**. Use **God Mode → Threats & wildlife** to enable them, adjust balance/spawn areas, or remove them immediately. [Feature guide](docs/dynamic-threats.md) · [Milestone validation](docs/validation-threats.md).
 

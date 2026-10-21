@@ -89,7 +89,9 @@ def generate(config, system, context):
             result = json.loads(content)
             if not isinstance(result, dict):
                 raise ValueError('Expected JSON object from model')
-            return {'ok': True, 'data': result}
+            usage={'input_tokens':body.get('prompt_eval_count'),'output_tokens':body.get('eval_count')} if config.provider=='ollama' else {'input_tokens':body.get('usage',{}).get('prompt_tokens'),'output_tokens':body.get('usage',{}).get('completion_tokens')}
+            usage={k:v for k,v in usage.items() if type(v) is int and v>=0}
+            return {'ok': True, 'data': result,'usage':usage}
         except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
             error = f'{type(exc).__name__}: {str(exc)[:200]}'
     return {'ok': False, 'error': error}

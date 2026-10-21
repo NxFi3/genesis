@@ -182,6 +182,7 @@ def _impact(world, threat, target, state, power):
 
 
 def warn(world, actor, target):
+    if not world.controls['communication']:return {'ok':False,'message':'Communication disabled by experiment'}
     observation = actor.observations.get(target, {})
     if observation.get('kind') not in ('threat', 'threat_report') or world.tick-observation.get('observed_tick', -1000) > 100:
         return {'ok': False, 'message': 'Warn requires a recent personal sighting or sourced report'}

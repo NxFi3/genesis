@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "deterministic-generations",
+  "seeds": [42],
+  "ticks": 12000,
+  "sample_interval": 100,
+  "world": {"width": 64, "height": 64, "population": 8, "generator": "coherent"},
+  "demography": {"ticks_per_year": 200, "max_age": 80, "population_cap": 40, "offline_fallback": true},
+  "personalities": {"a1": {"sociability": 0.9}, "a2": {"sociability": 0.9}, "b1": {"sociability": 0.9}, "b2": {"sociability": 0.9}},
+  "inference": {"enabled": false},
+  "groups": [{"id": "baseline", "conditions": {}}]
+}

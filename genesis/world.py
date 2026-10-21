@@ -8,7 +8,7 @@ import re
 
 from .models import Agent, Settlement, Resource, Building, Wildlife, Conflict
 from . import combat
-from . import environment, registry, survival, production, threats, families
+from . import environment, registry, survival, production, threats, families, controls, analytics
 from .worldsystems import BUILDING_TYPES, initialize
 
 BUILDINGS = {
@@ -60,6 +60,8 @@ class World:
         self.next_shipment = 1
         self.event_sink = None
         self._paths = {}
+        controls.initialize(self)
+        analytics.initialize(self)
         self._generate(population)
         initialize(self,new=True)
 
@@ -235,7 +237,9 @@ class World:
         return amount > 0
 
     def event(self, kind, text, actors, **extra):
-        e = {'id': self.next_event, 'tick': self.tick, 'kind': kind, 'text': text, 'actors': actors, **extra}
+        e = {'id': self.next_event, 'tick': self.tick, 'kind': kind, 'text': text, 'actors': actors,
+             'source':self._action_origin or ('observer' if kind=='god_intervention' else 'deterministic_engine'), **extra}
+        analytics.event(self,e)
         self.next_event += 1
         self.events.append(e)
         if len(self.events) > EVENT_LIMIT:
@@ -351,6 +355,7 @@ class World:
         return True
 
     def trade(self, a, b, offered='wood', wanted='food', amount=2, accepted=False):
+        if not self.controls['cooperation']:return False
         if (a.id == b.id or a.incapacitated or b.incapacitated or combat.distance(a, b) > 2
                 or not math.isfinite(amount) or amount <= 0 or offered == wanted or offered not in a.inventory or wanted not in b.inventory):
             return False
@@ -430,6 +435,16 @@ class World:
         return True
 
     def _routine(self, a):
+        previous=self._action_origin
+        self._action_origin='deterministic_fallback'
+        a._last_action_origin='deterministic_fallback'
+        try:return self._routine_impl(a)
+        finally:
+            source=a._last_action_origin
+            analytics.increment(self.research_stats['agents'].setdefault(a.id,{}),source+'_ticks')
+            self._action_origin=previous
+
+    def _routine_impl(self, a):
         s = self.settlements[a.home]
         a.defending = False
         if a.incapacitated:
@@ -486,7 +501,7 @@ class World:
         if production.autonomous(self,a): return
         if survival.autonomous(self,a): return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
-        if injured:
+        if injured and self.controls['cooperation']:
             assisted = False
             for kind, need in (('food', 'hunger'), ('water', 'thirst')):
                 if getattr(injured, need) > 45 and a.inventory[kind] >= 1:
@@ -571,7 +586,7 @@ class World:
                     if self.request_shipment(a, other.id, offered, wanted, 4):
                         a.reason, a.activity = 'Taking a voluntary trade opportunity from relative scarcity', 'transport'
                         return
-        if self.tick % 17 == 0 and a.personality['sociability'] > .2:
+        if self.controls['communication'] and self.tick % 17 == 0 and a.personality['sociability'] > .2:
             others = [b for b in self.agents.values() if b.id != a.id and combat.distance(a, b) < 3 and not b.incapacitated]
             if others:
                 b = self.rng.choice(others)
@@ -754,7 +769,7 @@ class World:
                     shipment['depart_after'] = self.tick+8
                     courier.next_reason_tick = self.tick
                     self.stats['traded'] += quantity*2
-                    self.event('settlement_trade', f'{courier.name} exchanged {quantity:g} {offered} for {wanted} at {destination.name}.', [courier.id])
+                    self.event('settlement_trade', f'{courier.name} exchanged {quantity:g} {offered} for {wanted} at {destination.name}.', [courier.id],origin=origin.id,destination=destination.id,offered=offered,wanted=wanted,amount=quantity)
                 else:
                     shipment['state'] = 'returning'
                     shipment['failed'] = True
@@ -819,6 +834,7 @@ class World:
         return True
 
     def request_shipment(self, agent, destination, offered='food', wanted='metal', amount=4):
+        if not self.controls['cooperation']:return False
         if destination not in self.settlements or destination == agent.home or not math.isfinite(amount) or amount <= 0 or amount > 20 or offered == wanted:
             return None
         origin = self.settlements[agent.home]
@@ -940,6 +956,7 @@ class World:
                             self.start_conflict(a.id, b.id, 'scarcity and unresolved rivalry')
                             break
             production.update(self)
+            controls.shared(self)
             if self.tick % 50 == 0:
                 for s in self.settlements.values():
                     s.stability = min(100, s.stability + .5) if s.conflict == 'peace' else max(0, s.stability-.2)
@@ -952,6 +969,7 @@ class World:
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
         result.update(worldgen=self.worldgen,navigation=self.navigation)
         result.update(demography=self.demography,households=self.households,family_archive=self.family_archive,family_offers=self.family_offers,estates=self.estates,next_person=self.next_person,systems_version=4)
+        result.update(controls=self.controls,research_stats=self.research_stats,action_history=self.action_history,shared_reports=self.shared_reports)
         result['events'] = self.events if full else self.events[-80:]
         if full:
             result['rng_state'] = self.rng.getstate()
@@ -977,7 +995,7 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
-        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation','demography','households','family_archive','family_offers','estates','next_person'):
+        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation','demography','households','family_archive','family_offers','estates','next_person','controls','research_stats','action_history','shared_reports'):
             if name in data: setattr(w,name,data[name])
         initialize(w)
         from .validation import validate_world

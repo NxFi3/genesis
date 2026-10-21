@@ -64,6 +64,8 @@ def update(world):
         if recipe.get('equipment') and recipe['equipment'] not in actor.equipment: actor.equipment.append(recipe['equipment'])
         actor.skills['craft']=min(5,actor.skills.get('craft',1)+.05)
         job['escrow']={}; job['state']='completed'; job['completed']=world.tick
+        from .analytics import completion
+        completion(world,job)
         world.event('production_completed',f'{actor.name} completed {job["recipe"]}.',[actor.id],job=job['id'])
     if world.tick%100==0:
         world.production_jobs={k:v for k,v in world.production_jobs.items() if v['state']=='working' or world.tick-v.get('completed',v['created'])<500}

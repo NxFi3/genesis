@@ -20,6 +20,9 @@ BUILDING_TYPES={
 
 
 def initialize(world,new=False):
+    from . import controls,analytics
+    controls.initialize(world)
+    analytics.initialize(world)
     if not hasattr(world,'worldgen'):world.worldgen={'mode':'legacy','chunk_size':16}
     if not hasattr(world,'navigation'):world.navigation={'searches':0,'expanded':0,'max_expanded':0}
     for name,default in [('climate',initial()),('crops',{}),('fires',{}),('production_jobs',{}),('gates',{}),('threats',{})]:

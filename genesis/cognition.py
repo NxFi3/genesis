@@ -135,7 +135,8 @@ class Scheduler:
         self.global_used = 0
         self.started = time.monotonic()
         self.metrics = {'completed': 0, 'failed': 0, 'stale': 0, 'submitted': 0,
-                        'latency_ms': 0., 'last_error': '', 'budget_deferred': 0}
+                        'latency_ms': 0., 'last_error': '', 'budget_deferred': 0,
+                        'input_tokens':0,'output_tokens':0,'usage_available':False}
         self.events_seen = {}
 
     def status(self):
@@ -198,6 +199,7 @@ class Scheduler:
         return True
 
     def speak(self, world, speaker_id, target_id, message, source='player', topic='conversation'):
+        if not world.controls['communication']:raise ValueError('Communication is disabled by the experimental condition')
         speaker, target = world.agents.get(speaker_id), world.agents.get(target_id)
         if not speaker or not target or speaker_id == target_id or not isinstance(message, str) or not message.strip():
             raise ValueError('A conversation needs two distinct participants and a nonempty message')
@@ -250,6 +252,10 @@ class Scheduler:
                     conversation=conversation['id'], source=source)
 
     def _apply(self, world, job, response):
+        usage=response.get('usage',{})
+        for key in ('input_tokens','output_tokens'):
+            if type(usage.get(key)) is int and usage[key]>=0:
+                self.metrics[key]+=usage[key];self.metrics['usage_available']=True
         agent = world.agents.get(job.agent)
         if job.epoch != self.epoch or not agent or agent.cognition_revision != job.revision or world.tick-job.tick > self.config.budget_window or agent.incapacitated:
             self.metrics['stale'] += 1
@@ -266,8 +272,11 @@ class Scheduler:
                 c['state'], c['error'] = 'failed', self.metrics['last_error']
             return
         try:
+            from .analytics import proposal as audit_proposal
+            audit_proposal(world,agent.id,response.get('data'), 'proposed')
             proposal = validate_plan(response['data'])
         except (ValueError, KeyError, TypeError) as exc:
+            audit_proposal(world,agent.id,response.get('data'),'rejected')
             self.metrics['failed'] += 1
             agent.plan_error = f'Model proposal rejected: {exc}'
             agent.next_reason_tick = world.tick+5
@@ -285,6 +294,7 @@ class Scheduler:
             if not any(x.get('description') == proposal['goal'] for x in agent.long_term_goals):
                 agent.long_term_goals.append(dict(entry))
         adopted = adopt_plan(world, agent, proposal)
+        audit_proposal(world,agent.id,proposal,'validated',adopted)
         if adopted and world.active(agent.id) and agent.plan and agent.plan[0].get('action') == 'conflict_response':
             from .actions import execute
             outcome = execute(world, agent.plan[0], actor_id=agent.id, planned=True)
@@ -349,7 +359,7 @@ class Scheduler:
             if command['action'] in ('accept', 'reject'):
                 agreement = world.agreements.get(command.get('agreement'), {})
                 related = {agreement.get('proposer'), agreement.get('recipient')} == {actor.id, partner.id}
-            result = execute(world, command, actor.id, planned=True) if related else {'ok': False, 'message': 'Dialogue actions must involve this conversation partner'}
+            result = execute(world, command, actor.id, planned=True,origin='llm') if related else {'ok': False, 'message': 'Dialogue actions must involve this conversation partner'}
             outcome = {'tick': world.tick, 'actor': actor.id, 'action': command['action'],
                        'ok': result['ok'], 'message': result['message']}
             if 'agreement' in result:

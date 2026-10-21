@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "local-model-pilot",
+  "seeds": [42],
+  "ticks": 300,
+  "sample_interval": 10,
+  "world": {"width": 64, "height": 64, "population": 5, "generator": "coherent"},
+  "tick_seconds": 0.2,
+  "drain_seconds": 15,
+  "inference": {"enabled": true, "provider": "ollama", "endpoint": "http://127.0.0.1:11434", "model": "qwen2.5:7b", "max_concurrency": 2, "per_agent_budget": 4, "global_budget": 40},
+  "record_model_content": false,
+  "groups": [{"id": "local-llm", "conditions": {}}]
+}

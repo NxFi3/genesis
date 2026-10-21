@@ -73,6 +73,7 @@ class Agent:
     property: list = field(default_factory=list)
     reflection: str = ''
     observations: dict = field(default_factory=dict)
+    memory_enabled: bool = True
 
 
 @dataclass

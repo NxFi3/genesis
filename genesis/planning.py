@@ -124,26 +124,29 @@ def execute_plan(world, agent):
     if world.tick-started > 300:
         result = {'ok': False, 'message': 'Action timed out after 300 ticks'}
     else:
-        result = execute(world, {k: v for k, v in step.items() if not k.startswith('_')}, actor_id=agent.id, planned=True)
+        result = execute(world, {k: v for k, v in step.items() if not k.startswith('_')}, actor_id=agent.id, planned=True,origin='llm')
     agent.reason = f'Plan: {agent.plan_goal or (agent.goals[-1].get("description", "chosen goal") if agent.goals else "chosen goal")}; step {agent.plan_index+1}'
     if not result['ok']:
         agent.plan_status = 'failed'
         agent.plan_error = result['message']
         agent.next_reason_tick = world.tick
         agent.cognition_revision += 1
-        world.event('plan_failed', f'{agent.name}: {result["message"]}', [agent.id])
+        world.event('plan_failed', f'{agent.name}: {result["message"]}', [agent.id],source='llm')
     elif not result.get('pending'):
         agent.plan_index += 1
         agent.plan_error = ''
         if agent.plan_index >= len(agent.plan):
             agent.plan_status = 'completed'
             agent.next_reason_tick = world.tick+5
-            world.event('plan_completed', f'{agent.name} completed a plan.', [agent.id])
+            world.event('plan_completed', f'{agent.name} completed a plan.', [agent.id],source='llm')
     return True
 
 
 def adopt_plan(world, agent, proposal):
     """Conversation and periodic reflection preserve unfinished physical work by default."""
+    if not world.controls['planning']:
+        agent.plan_feedback='Planning disabled by experimental condition'
+        return False
     proposed = proposal['plan']
     active = agent.plan_status == 'active' and agent.plan_index < len(agent.plan)
     policy = proposal['plan_policy']

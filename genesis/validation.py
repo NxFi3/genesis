@@ -3,6 +3,8 @@ import math
 
 
 def validate_world(world):
+    from .controls import validate as validate_controls
+    validate_controls(world.controls)
     from .families import validate_world as validate_families
     validate_families(world)
     from .world import BUILDINGS, PASSABLE

@@ -4,7 +4,14 @@ from . import combat
 from .memory import learn
 
 
-def execute(world, command, actor_id='player', planned=False):
+def execute(world, command, actor_id='player', planned=False, origin=None):
+    from .analytics import execute as audited_execute
+    actor=world.agents.get(actor_id)
+    if actor:actor._last_action_origin=origin or ('player' if actor.player else 'deterministic_fallback')
+    return audited_execute(world,command,actor_id,planned,origin,_execute)
+
+
+def _execute(world, command, actor_id='player', planned=False):
     a = world.agents.get(actor_id)
     def fail(reason):
         return {'ok': False, 'message': reason}
@@ -13,6 +20,8 @@ def execute(world, command, actor_id='player', planned=False):
     if not a:
         return fail('Unknown actor')
     action = command.get('action')
+    from .controls import permitted
+    if not permitted(world,action):return fail('Action disabled by the explicit experimental condition')
     from .families import adult, ACTIONS, action as family_action
     if not adult(a) and action not in ('move','observe','rest','sleep','eat','drink'):
         return fail('Dependent children cannot execute adult work, combat or social agreements')

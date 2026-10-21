@@ -119,8 +119,9 @@ func _make_ui() -> void:
         panel.add_theme_stylebox_override("panel", UIStyle.box(Color("172923"), Color("43584a"), 9))
         panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(panel)
-    label_at("G E N E S I S  3", Vector2(24, 14), 28).modulate = Color("e3ce9a")
-    label_at("THE LIVING WORLD  /  Civilization & survival", Vector2(305, 28), 14)
+    label_at("G E N E S I S  4", Vector2(24, 14), 28).modulate = Color("e3ce9a")
+    label_at("ARTIFICIAL SOCIETY  /  Research edition", Vector2(305, 28), 14)
+    button_at("Research",Vector2(665,15),func():OS.shell_open("http://127.0.0.1:8769"),100)
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
     button_at("God Mode",Vector2(775,15),_open_god_mode,110)

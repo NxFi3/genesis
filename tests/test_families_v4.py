@@ -163,3 +163,25 @@ class FamilyTests(unittest.TestCase):
         loaded=World.from_snapshot(json.loads(json.dumps(data)))
         self.assertEqual(sum(sum(h['inventory'].values()) for h in loaded.households.values()),0)
         validate_world(loaded)
+
+    def test_grandchild_links_and_inheritance_span_three_generations(self):
+        h=self.prepare_birth();self.w.tick=h['birth_due'];families.update(self.w)
+        child=self.w.agents[self.a.children[0]]
+        self.w.tick=child.birth_tick+1800;families.update(self.w)
+        partner=self.w.agents['a0'];child.x,child.y=9,10;partner.x,partner.y=9,10
+        self.assertTrue(self.act(child,'create_household')['ok'])
+        for _ in range(6):self.w.relate(child,partner,.1);self.w.relate(partner,child,.1)
+        self.assertTrue(self.act(child,'propose_union',target=partner.id)['ok'])
+        self.assertTrue(self.act(partner,'accept_union',target=child.id)['ok'])
+        for kind in ('food','water'):
+            self.assertTrue(self.act(child,'retrieve',kind=kind,amount=20)['ok'])
+            self.assertTrue(self.act(child,'household_transfer',kind=kind,amount=20)['ok'])
+        self.act(child,'family_plan',target=partner.id,choice='raise_child');self.act(partner,'family_plan',target=child.id,choice='raise_child')
+        families.update(self.w);new_home=self.w.households[child.household]
+        self.w.tick=new_home['birth_due'];families.update(self.w)
+        grandchild=self.w.agents[child.children[0]]
+        self.assertIn(self.a.id,families.ancestors(self.w,grandchild.id))
+        self.assertEqual(families.tree(self.w,grandchild.id)['parents'][0]['id'],child.id)
+        loaded=World.from_snapshot(copy.deepcopy(self.w.snapshot(True)))
+        self.assertEqual(grandchild.appearance,loaded.agents[grandchild.id].appearance)
+        validate_world(loaded)

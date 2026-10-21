@@ -7,7 +7,7 @@ from .combat import distance
 
 
 def opportunities(world, agent, limit=3):
-    if agent.incapacitated or world.active(agent.id):
+    if not world.controls['communication'] or agent.incapacitated or world.active(agent.id):
         return []
     busy = {aid for c in world.conversations.values() if c['state'] == 'active' for aid in c['participants']}
     if agent.id in busy:

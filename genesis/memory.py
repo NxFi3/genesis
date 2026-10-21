@@ -6,6 +6,7 @@ from .environment import conditions
 
 
 def remember(agent, tick, text, source, importance=1, confidence=1):
+    if not agent.memory_enabled:return
     agent.memories.append({'tick': tick, 'content': str(text)[:1200], 'source': source,
                            'importance': importance, 'confidence': min(1, max(0, confidence))})
     if len(agent.memories) > 120:
@@ -15,6 +16,7 @@ def remember(agent, tick, text, source, importance=1, confidence=1):
 
 def learn(agent, tick, claim, source, confidence=.5, observed=False):
     """A report is a belief, not a fact. Only this recipient acquires it."""
+    if not agent.memory_enabled:return
     claim = str(claim).strip()[:500]
     if not claim:
         return

@@ -157,6 +157,7 @@ def birth(world,h,parents):
     b=world.buildings[h['residence']];identity=f'person{world.next_person}';world.next_person+=1
     baby=Agent(identity,f'Child {identity}',b.x,b.y,h['home'],age=0,birth_tick=world.tick,life_stage='infant',household=h['id'],residence=b.id,parents=[p.id for p in parents],inventory=inventory(),occupation='dependent',skills={'gather':.1,'build':.1,'combat':.1})
     baby.appearance=genetics.profile(world.seed,identity,[p.appearance for p in parents])
+    baby.memory_enabled=world.controls['memory']
     baby.personality={'aggression':world.rng.uniform(.05,.85),'courage':world.rng.random(),'sociability':world.rng.random()}
     for kind in ('food','water'):h['inventory'][kind]-=2
     h['members'].append(identity);h['births']+=1;h['last_birth']=world.tick;h.pop('birth_due',None)

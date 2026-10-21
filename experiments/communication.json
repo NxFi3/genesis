@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "communication-ablation",
+  "seeds": [41, 42, 43],
+  "ticks": 1000,
+  "sample_interval": 25,
+  "world": {"width": 64, "height": 64, "population": 5, "generator": "coherent"},
+  "inference": {"enabled": false},
+  "groups": [
+    {"id": "communication-on", "conditions": {"communication": true}},
+    {"id": "communication-off", "conditions": {"communication": false}}
+  ]
+}
