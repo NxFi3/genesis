@@ -99,6 +99,27 @@ class WorldV2Tests(unittest.TestCase):
         self.a.hunger = 90
         self.assertTrue(self.w._consume(self.a, 'food', 'hunger'))
 
+    def test_collective_project_approval_drives_real_builder_work(self):
+        s = self.w.settlements['a']
+        s.inventory.update(wood=100, stone=100)
+        proposal = self.w.propose_policy(self.a, 'share_surplus', 'hall')
+        self.assertIsNotNone(proposal)
+        for aid in s.council:
+            self.w.vote(self.w.agents[aid], proposal, True)
+        self.w._institutions()
+        self.assertIn('hall', self.w.governance['a']['projects'])
+        builder = self.w.agents['a1']
+        builder.x, builder.y = s.x, s.y
+        before = s.inventory.copy()
+        self.w._routine(builder)
+        self.assertIn('a_hall', self.w.buildings)
+        self.assertEqual(s.inventory['wood'], before['wood']-BUILDINGS['hall']['wood'])
+        self.assertNotIn('hall', self.w.governance['a']['projects'])
+        for _ in range(BUILDINGS['hall']['duration']):
+            self.w._routine(builder)
+            builder.stamina = 100
+        self.assertTrue(self.w.buildings['a_hall'].complete)
+
     def test_shipment_cargo_physical_and_conserved(self):
         a, b = self.w.settlements['a'], self.w.settlements['b']
         a.inventory['food'], a.inventory['metal'] = 120, 0

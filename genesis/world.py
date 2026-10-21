@@ -43,6 +43,7 @@ class World:
         self.next_event = 1
         self.terrain = []
         self.conversations, self.agreements = {}, {}
+        self.cognition_config = {}
         self.proposals, self.shipments, self.resource_growth = {}, {}, {}
         self.governance = {}
         self.next_conflict = 1
@@ -465,8 +466,11 @@ class World:
                     self.stats['built'] += 1
                     self.event('built', f'{s.name} completed a {b.kind}.', [a.id])
             else:
-                for kind in ('farm', 'workshop', 'market', 'watchtower'):
+                requested = self.governance[s.id].get('projects', [])
+                for kind in [*requested, 'farm', 'workshop', 'market', 'watchtower']:
                     if self.construct(a, kind):
+                        if kind in requested:
+                            requested.remove(kind)
                         break
             return
         if self.tick % 200 == 0 and combat.distance(a, s) <= 2 and a.occupation not in ('guard', 'builder'):
@@ -593,12 +597,19 @@ class World:
                 if voter.incapacitated:
                     continue
                 policy = proposal['policy']
-                agree = voter.personality['aggression'] < .7 if policy in ('share_surplus', 'open_trade') else (s.inventory['food'] < 40 if policy == 'rationing' else voter.personality['courage'] > .4)
+                if policy == 'group_project':
+                    agree = voter.personality['sociability'] > .2 and s.stability > 30
+                else:
+                    agree = voter.personality['aggression'] < .7 if policy in ('share_surplus', 'open_trade') else (s.inventory['food'] < 40 if policy == 'rationing' else voter.personality['courage'] > .4)
                 self.vote(voter, proposal['id'], agree)
             if len(proposal['votes']) >= len(s.council) or self.tick-proposal['tick'] >= 30:
                 passed = sum(proposal['votes'].values()) > len(s.council)/2
                 proposal['state'] = 'passed' if passed else 'rejected'
-                if passed:
+                if passed and proposal['policy'] == 'group_project':
+                    projects = self.governance[s.id].setdefault('projects', [])
+                    if proposal['kind'] not in projects:
+                        projects.append(proposal['kind'])
+                elif passed:
                     s.policy = proposal['policy']
                     self.governance[s.id]['sharing'] = s.policy in ('share_surplus', 'open_trade')
                     self.governance[s.id]['defense'] = 'guarded' if s.policy == 'defense' else 'peaceful'
@@ -666,14 +677,18 @@ class World:
                     self.wildlife[wid] = Wildlife(wid, x, y, species=parent.species)
                     self.event('wildlife_birth', 'A new wild animal was observed.', [])
 
-    def propose_policy(self, agent, policy):
+    def propose_policy(self, agent, policy, kind=None):
         policy = {'ration': 'rationing', 'guarded': 'defense'}.get(policy, policy)
-        if policy not in ('share_surplus', 'rationing', 'open_trade', 'defense') or agent.incapacitated:
+        if kind is not None:
+            if kind not in BUILDINGS:
+                return None
+            policy = 'group_project'
+        if policy not in ('share_surplus', 'rationing', 'open_trade', 'defense', 'group_project') or agent.incapacitated or (policy == 'group_project' and kind is None):
             return None
         if any(p['state'] == 'open' and p['settlement'] == agent.home for p in self.proposals.values()):
             return None
         pid = f'proposal_{self.next_event}'
-        self.proposals[pid] = {'id': pid, 'settlement': agent.home, 'proposer': agent.id, 'policy': policy, 'votes': {}, 'state': 'open', 'tick': self.tick}
+        self.proposals[pid] = {'id': pid, 'settlement': agent.home, 'proposer': agent.id, 'policy': policy, 'kind': kind, 'votes': {}, 'state': 'open', 'tick': self.tick}
         self.event('proposal', f'{agent.name} proposed {policy}.', [agent.id], proposal=pid)
         return pid
 
@@ -794,7 +809,7 @@ class World:
     def snapshot(self, full=False):
         result = {'version': 1, 'seed': self.seed, 'width': self.width, 'height': self.height, 'tick': self.tick, 'season': self.season,
                   'terrain': self.terrain, 'stats': self.stats, 'next_event': self.next_event, 'hour': self.hour, 'weather': self.weather, 'daylight': self.daylight,
-                  'conversations': self.conversations, 'agreements': self.agreements, 'governance': self.governance, 'proposals': self.proposals, 'shipments': self.shipments, 'resource_growth': self.resource_growth, 'next_conflict': self.next_conflict, 'next_shipment': self.next_shipment, 'paths': {k: [list(v[0]), [list(p) for p in v[1]]] for k, v in self._paths.items()}}
+                  'conversations': self.conversations, 'agreements': self.agreements, 'cognition_config': self.cognition_config, 'governance': self.governance, 'proposals': self.proposals, 'shipments': self.shipments, 'resource_growth': self.resource_growth, 'next_conflict': self.next_conflict, 'next_shipment': self.next_shipment, 'paths': {k: [list(v[0]), [list(p) for p in v[1]]] for k, v in self._paths.items()}}
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
         result['events'] = self.events if full else self.events[-80:]
@@ -813,7 +828,7 @@ class World:
             setattr(w, name, {k: model(**v) for k, v in data[name].items()})
         def tuples(v):
             return tuple(tuples(x) for x in v) if isinstance(v, list) else v
-        for name in ('conversations', 'agreements', 'proposals', 'shipments', 'resource_growth'):
+        for name in ('conversations', 'agreements', 'proposals', 'shipments', 'resource_growth', 'cognition_config'):
             setattr(w, name, data.get(name, {}))
         w.governance = data.get('governance', {sid: {'leader': s.council[0] if s.council else None, 'tax': .1, 'sharing': True, 'defense': 'peaceful', 'technology': ['gathering', 'construction'], 'last_election': 0} for sid, s in w.settlements.items()})
         w.next_conflict = data.get('next_conflict', 1+max((int(k[1:]) for k in w.conflicts if k[1:].isdigit()), default=0))

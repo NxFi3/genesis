@@ -27,7 +27,7 @@ New building capabilities:
 
 Completed facilities slowly lose condition; farm output scales with condition. Existing repair actions restore condition using wood. No blanket resource generation is used for equipment. Crafting consumes explicit recipe inputs at a completed nearby workshop; duplicate equipment crafting is refused. Skill teaching requires a more knowledgeable nearby teacher. Teaching a known claim transfers only that claim and its uncertainty/source, not the teacher's full private state. Supported recipes and skill progression are predefined capabilities, not unrestricted invention.
 
-Council proposals and votes now change actual policy. Canonical policies are `share_surplus`, `rationing`, `open_trade`, and `defense`; legacy `ration`/`guarded` names are accepted as aliases. A majority of the local council must approve. Sharing/rationing controls nonemergency store withdrawals; urgent hunger still permits aid. Defense policy assigns guards to actual home-settlement disputes without creating fights. Proposals, votes, governance and policy persist. Leadership is still initially assigned; elections and constitutional design are not implemented.
+Council proposals and votes now change actual policy. Canonical policies are `share_surplus`, `rationing`, `open_trade`, and `defense`; legacy `ration`/`guarded` names are accepted as aliases. A majority of the local council must approve. Sharing/rationing controls nonemergency store withdrawals; urgent hunger still permits aid. Defense policy assigns guards to actual home-settlement disputes without creating fights. A construction proposal can include a supported building kind; majority approval places a project in the settlement queue, and a real builder then reserves stock and completes work over time. Proposals, votes, governance, approved projects and policy persist. Leadership is still initially assigned; elections and constitutional design are not implemented.
 
 Settlements can exchange relative surpluses through a courier. A shipment reserves actual origin stock into a physically carried cargo record owned by that settlement. The courier walks through the world, exchanges goods only on reaching the destination and only if stock/demand still permit it, then returns the cargo home. Failed exchanges return original property. Cargo is not duplicated into personal inventory and cannot be accidentally eaten. Resource-accounting tools must include `shipment['cargo']`. Incapacitated couriers wait and resume on recovery. Nearby nonbuilder/nonguard inhabitants can voluntarily choose a demand-scored cross-settlement opportunity every 200 ticks. This is a utility opportunity, not a scripted mandatory caravan.
 
@@ -36,7 +36,7 @@ Settlements can exchange relative surpluses through a courier. A shipment reserv
 - `construct(agent, kind, x=None, y=None)`
 - `craft(agent, item)`
 - `teach(teacher, learner, topic)`
-- `propose_policy(agent, policy)` → proposal ID or `None`
+- `propose_policy(agent, policy, kind=None)` → proposal ID or `None`
 - `vote(agent, proposal_id, approve)`
 - `request_shipment(agent, destination, offered='food', wanted='metal', amount=4)` → shipment ID or `None`
 
@@ -44,6 +44,6 @@ World snapshots retain conversations, agreements, governance, proposals, shipmen
 
 ## Executed checks
 
-`python3 -m unittest discover -s tests -p test_world_v2.py -v`: 12 tests passed. Includes a real 10,000-tick offline run with the player removed, physical shipment conservation/failure, shelter/sleep, starvation-loop regression, council policy, equipment input consumption, teaching, bridge terrain changes, bounded events, and exact save continuation.
+`python3 -m unittest discover -s tests -p test_world_v2.py -v`: 13 tests passed. Includes a real 10,000-tick offline run with the player removed, physical shipment conservation/failure, shelter/sleep, starvation-loop regression, council policy and collective construction, equipment input consumption, teaching, bridge terrain changes, bounded events, and exact save continuation.
 
-The most recent standalone world run completed 10,000 ticks in approximately 6.06 seconds on this cloud instance, retaining 2,048 events and completing eight buildings. This is an observed local measurement, not a claim about target-machine performance or LLM throughput. The pre-existing and combat regression suite also passed after the world changes (32 tests before the added world suite).
+The most recent standalone world run completed 10,000 ticks in approximately 5.57 seconds on this cloud instance, retaining 2,048 events and completing eight buildings. This is an observed local measurement, not a claim about target-machine performance or LLM throughput. The pre-existing and combat regression suite also passed after the world changes (32 tests before the added world suite).
