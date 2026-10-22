@@ -1,0 +1,19 @@
+name: Genesis Python validation
+on:
+  push:
+    branches:
+      - feature/genesis-emergent-builders
+  workflow_dispatch:
+
+jobs:
+  python-regressions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run all Python regressions
+        run: python -m unittest discover -s tests -q
