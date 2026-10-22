@@ -57,7 +57,7 @@ var talk_button: Button
 var journal: PopupPanel
 var journal_events: RichTextLabel
 var journal_conversations: RichTextLabel
-var show_all_conversations := false
+var show_all_conversations := true
 var journal_open := false
 
 func _ready() -> void:
@@ -203,6 +203,7 @@ func _make_ui() -> void:
     add_child(history_tabs)
     timeline = rich_tab(history_tabs, "Events")
     conversation_history = rich_tab(history_tabs, "Conversations")
+    conversation_history.tooltip_text = "Live transcript of every NPC conversation, including conversations you are not part of."
     dialogue = TextEdit.new()
     dialogue.position = Vector2(910, 704)
     dialogue.size = Vector2(350, 78)
@@ -640,7 +641,7 @@ func _conversation_text(all_people: bool) -> String:
     return "\n".join(lines) if not lines.is_empty() else "No conversations yet. In LLM mode, nearby inhabitants may choose to talk. Select someone nearby to send your own message."
 
 func _update_conversations() -> void:
-    _write_rich(conversation_history,_conversation_text(false),true)
+    _write_rich(conversation_history,_conversation_text(true),true)
     _write_rich(journal_conversations,_conversation_text(show_all_conversations),true)
     var mode: String = state.get("cognition",{}).get("mode","offline")
     chat_status.text = "Offline · enable Ollama in Settings" if mode == "offline" else "Ready · select a nearby inhabitant"
@@ -659,6 +660,12 @@ func _update_conversations() -> void:
             if c.state == "waiting_player": chat_status.text = "Your turn · reply below"
             elif c.state == "active": chat_status.text = "Awaiting reply · the world continues"
             elif c.state == "failed": chat_status.text = "Reply failed · see Conversations"
+    var conversations: Dictionary = state.get("conversations", {})
+    var npc_count: int = 0
+    for c in conversations.values():
+        if not c.get("participants", []).has("player"):
+            npc_count += 1
+    conversation_history.tooltip_text = "%d NPC-to-NPC conversations recorded. These are text conversations; no voice synthesis is implemented." % npc_count
     chat_status.tooltip_text = chat_status.text
 
 func _make_journal() -> void:
