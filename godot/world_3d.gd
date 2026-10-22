@@ -95,6 +95,7 @@ func height_at(x: float, y: float) -> float:
 
 func accept_state(value: Dictionary) -> void:
     var first := state.is_empty()
+    var map_changed: bool = first or int(state.get('width', 0)) != int(value.get('width', 0)) or int(state.get('height', 0)) != int(value.get('height', 0))
     state = value
     custom_climate.clear()
     var override: Dictionary=state.get("climate",{}).get("overrides",{}).get("region",{})
@@ -140,7 +141,7 @@ func accept_state(value: Dictionary) -> void:
         deposit_hash=next
         _deposits()
     _entities()
-    if first:
+    if map_changed:
         reset_camera()
         if maxi(int(state.width), int(state.height)) >= 96:
             var home: Dictionary = state.get('settlements', {}).get('a', {})
@@ -159,7 +160,7 @@ func _terrain() -> void:
     _clear(foliage)
     batches.clear()
     # Fewer decorative instances on huge maps; simulation geography is unchanged.
-    var detailed_foliage: bool = int(state.width) * int(state.height) <= 16384
+    var detailed_foliage: bool = int(state.width) * int(state.height) <= 4096
     var surfaces: Dictionary = {}
     for y in range(state.height):
         for x in range(state.width):
