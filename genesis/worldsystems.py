@@ -20,7 +20,8 @@ BUILDING_TYPES={
 
 
 def initialize(world,new=False):
-    from . import controls,analytics
+    from . import controls,analytics,architecture
+    architecture.initialize(world)
     controls.initialize(world)
     analytics.initialize(world)
     if not hasattr(world,'worldgen'):world.worldgen={'mode':'legacy','chunk_size':16}

@@ -17,6 +17,15 @@ Open `http://127.0.0.1:8769` for actual recorded charts and comparisons. Ollama 
 
 The latest version adds an orthographic 3D world, original low-poly assets, timed mining/production, crops/cooking/heat, regional weather and a persistent God Mode panel. [Genesis 3 guide and screenshots](docs/genesis3.md) · [Preserved conversation behavior](docs/communication-update.md).
 
+## Emergent modular structures (experimental)
+
+AI or player-authored building designs can now combine ground-level blocks and
+stacked materials into original layouts without a pre-scripted "castle" action.
+Builders consume physical supplies, collaborate on persistent designs, and see
+the results rendered in Godot. The authoritative movement grid is still 2-D,
+so this is **not** a complete Minecraft-style 3-D physics/voxel engine.
+See [modular architecture details](docs/modular-architecture.md).
+
 ## Start locally
 
 On this experimental development branch new command-line worlds default to **96 × 96** tiles; existing saves are never resized. The Godot **New world** dialog offers 48 × 30, 96 × 96, 128 × 128 and experimental 256 × 256 worlds. Use `--width 128 --height 128 --save data/large-world.sqlite` to keep a separate 128² world. Camera range and very-large-map decorative instance density were adjusted, but chunk-streamed rendering is not finished. Regional *surface* ore veins are finite and mineable; underground excavation is still missing. See [research guide](docs/research.md).

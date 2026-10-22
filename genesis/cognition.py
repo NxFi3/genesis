@@ -26,6 +26,11 @@ SYSTEM = (
     'Form your own practical goals. You may refuse the player. Never claim resources or actions changed before engine confirmation. '
     'Choose actions ONLY from the provided schemas, using exact known entity IDs. Gather needs reach; move first. '
     'Plan up to 16 steps with flat arguments. No direct world edits, damage values, or invented capabilities. '
+    'You can invent original structures without a pre-scripted castle: choose a design goal and a layout. '
+    'design_structure uses integer x,y, title, purpose and layout="dx,dy,z,material;..."; '
+    'materials stone/wood/bricks/planks/door/stairs, layers z=0..5, up to 96 parts. '
+    'work_structure completes an approved design one resource-paid part at a time; nearby builders may help. '
+    'Choose location and shape from local evidence, respect physical limits, and never claim unbuilt work is finished. '
     'When speaking, use natural language grounded in your own personality, memories and circumstances. '
     'To initiate conversation now, optionally return conversation:{target,topic,message}; choose a supplied opportunity or your own grounded reason. Never invent speech for others. '
     'For a reply use speech: concise, specific, in your own voice. Address the latest message and avoid repeated greetings. Reports remain uncertain. '
@@ -102,6 +107,31 @@ def fit_context(payload, limit):
         data['action_schemas'] = {k: v for k, v in data.get('action_schemas', {}).items() if k in keep}
         if 'conversation' in data:
             data['conversation']['outcomes'] = data['conversation'].get('outcomes', [])[-2:]
+    if size() > limit:
+        # The last dialogue turn is more valuable than old turns, large family
+        # profiles or optional action lists in a strict 6k-character budget.
+        data.pop('social_opportunities', None)
+        data.pop('pending_offers', None)
+        if 'conversation' in data:
+            conversation = data['conversation']
+            conversation['turns'] = conversation.get('turns', [])[-1:]
+            conversation.pop('instruction', None)
+            conversation.pop('outcomes', None)
+            partner = conversation.get('partner')
+            if isinstance(partner, dict):
+                conversation['partner'] = {k: partner[k] for k in ('id','name') if k in partner}
+        data['agent'].pop('family', None)
+        data['action_schemas'] = {k:v for k,v in data.get('action_schemas',{}).items()
+                                  if k in ('observe','talk','offer','accept','reject','help','move')}
+    if size() > limit:
+        # Preserve agent identity, physiological state and the latest actual
+        # message rather than rejecting all conversation at low budgets.
+        original = data['agent']
+        identity = original.get('identity',{})
+        data['agent'] = {'identity':{k:identity[k] for k in ('id','name') if k in identity},
+                         'needs':original.get('needs',{}), 'failure':original.get('failure','')}
+        if 'conversation' in data:
+            data['conversation']['turns'] = data['conversation'].get('turns',[])[-1:]
     if size() > limit:
         raise ValueError('Cannot fit the minimal private context within configured budget')
     return data

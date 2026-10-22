@@ -11,7 +11,8 @@ var god_panel: PopupPanel
 const FlatView = preload("res://world_view.gd")
 var flat_renderer := false
 var state: Dictionary = {}
-var selected := "a0"
+var selected := "player"
+var player_focused_once := false
 var player_mode := true
 var poll: HTTPRequest
 var sender: HTTPRequest
@@ -125,9 +126,12 @@ func _make_ui() -> void:
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
     button_at("God Mode",Vector2(775,15),_open_god_mode,110)
-    mode_button = button_at("Player mode", Vector2(900, 15), _toggle_mode, 130)
+    mode_button = button_at("Mode: Player", Vector2(900, 15), _toggle_mode, 130)
+    mode_button.tooltip_text = "Player controls WASD; Observer moves the camera instead."
     button_at("Pause / Resume", Vector2(1040, 15), func(): send({"action": "pause", "paused": not state.get("paused", false)}), 145)
     button_at("Settings", Vector2(1195, 15), _open_settings, 70)
+    button_at("Find me", Vector2(785, 53), _find_me, 104)
+    button_at("Nearby NPC", Vector2(775, 91), _nearest_npc, 112)
     button_at("Save", Vector2(900, 53), func(): send({"action": "save"}), 70)
     button_at("Load", Vector2(977, 53), func(): send({"action": "load"}), 70)
     button_at("1×", Vector2(1054, 53), func(): send({"action": "speed", "speed": 2}), 50)
@@ -149,7 +153,11 @@ func _make_ui() -> void:
     selector = OptionButton.new()
     selector.position = Vector2(910, 134)
     selector.size = Vector2(350, 28)
-    selector.item_selected.connect(func(index: int): selected = selector_ids[index]; _inspect())
+    selector.item_selected.connect(func(index: int):
+        selected = selector_ids[index]
+        view.follow_agent = false
+        _inspect()
+    )
     add_child(selector)
     var inspector := TabContainer.new()
     inspector.position = Vector2(910, 170)
@@ -222,9 +230,47 @@ func _open_god_mode() -> void:
     god_panel.update_world(state)
     god_panel.popup_centered()
 
+func _find_me() -> void:
+    if state.is_empty() or not state.get("agents", {}).has("player"):
+        status_label.text = "Your Traveler is not loaded yet."
+        return
+    selected = "player"
+    view.selected = "player"
+    view.focus_selected()
+    view.follow_agent = true
+    _inspect()
+    status_label.text = "Following your gold Traveler. WASD moves you in Player mode."
+
+
+func _nearest_npc() -> void:
+    var player: Dictionary = state.get("agents", {}).get("player", {})
+    if player.is_empty():
+        status_label.text = "Traveler not loaded yet."
+        return
+    var position := Vector2(float(player.x), float(player.y))
+    var closest: float = 7.0
+    var candidate := ""
+    for id in state.get("agents", {}):
+        if id == "player": continue
+        var agent: Dictionary = state.agents[id]
+        if agent.get("incapacitated", false) or agent.get("life_stage","adult") != "adult": continue
+        var dist: float = position.distance_to(Vector2(float(agent.x), float(agent.y)))
+        if dist < closest:
+            closest = dist
+            candidate = id
+    if candidate.is_empty():
+        status_label.text = "No adult NPC within 7 tiles. Walk toward a settlement."
+        return
+    selected = candidate
+    view.selected = candidate
+    view.follow_agent = false
+    _inspect()
+    status_label.text = "Selected %s (%.1f tiles away). Approach within 3 tiles, then Send message." % [_name(candidate),closest]
+
+
 func _toggle_mode() -> void:
     player_mode = not player_mode
-    mode_button.text = "Player mode" if player_mode else "Observer mode"
+    mode_button.text = "Mode: Player" if player_mode else "Mode: Observer"
     for item in player_buttons:
         item.disabled = not player_mode
     dialogue.editable = player_mode
@@ -237,8 +283,20 @@ func player_command(command: Dictionary) -> void:
         status_label.text = "Switch to Player mode to act in the world."
 
 func _talk() -> void:
+    if not player_mode:
+        status_label.text = "Switch to Mode: Player before speaking."
+        return
     if dialogue.text.strip_edges().is_empty():
         status_label.text = "Enter a message first."
+        return
+    var player: Dictionary = state.get("agents", {}).get("player", {})
+    var target: Dictionary = state.get("agents", {}).get(selected, {})
+    if player.is_empty() or target.is_empty() or selected == "player":
+        status_label.text = "Select another inhabitant from the right-hand list or map."
+        return
+    var distance_to_target: float = Vector2(float(player.x),float(player.y)).distance_to(Vector2(float(target.x),float(target.y)))
+    if distance_to_target > 3.0:
+        status_label.text = "Too far to talk: %.1f tiles. Walk within 3 tiles using WASD; Find me returns to your Traveler." % distance_to_target
         return
     player_command({"action": "talk", "target": selected, "message": dialogue.text})
     history_tabs.current_tab = 1
@@ -369,9 +427,12 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     god_panel.update_world(state)
     view.accept_state(state)
     view.selected = selected
+    if not player_focused_once and state.get("agents",{}).has("player"):
+        player_focused_once = true
+        _find_me()
     var environment: Dictionary = state.get("environment", {})
     top_stats.text = "%s · %s · Day %d, %02d:00 · %d inhabitants · %d buildings · %s" % [str(state.season).capitalize(),str(state.get("weather","clear")).capitalize(),1+int(state.tick)/240,int(state.get("hour",0)),state.agents.size()-1,state.buildings.size(),"Paused" if state.get("paused",false) else "Living world"]
-    top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick" % [state.tick,state.get("tick_ms",0)]
+    top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick · %d modular blocks · %d designs" % [state.tick,state.get("tick_ms",0),state.get("blocks",{}).size(),state.get("architecture_projects",{}).size()]
     top_stats.mouse_filter = Control.MOUSE_FILTER_PASS
     var cognition: Dictionary = state.get("cognition", {})
     var metrics: Dictionary = cognition.get("metrics", {})
@@ -383,7 +444,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     if cognition.get("mode","offline") == "offline":
         cognition_stats.text = "OFFLINE · Deterministic simulation · Enable local Ollama in Settings"
     else:
-        cognition_stats.text = "LLM MINDS · %s · %d thinking · %d queued%s" % [config.get("model","local model"),metrics.get("inflight",0),metrics.get("queued",0)," · Provider error (hover for details)" if not str(metrics.get("last_error","")).is_empty() else ""]
+        cognition_stats.text = "LLM MINDS · %s · OK %d · Failed %d · Thinking %d · Queue %d%s" % [config.get("model","local model"),metrics.get("completed",0),metrics.get("failed",0),metrics.get("inflight",0),metrics.get("queued",0)," · ERROR (hover)" if not str(metrics.get("last_error","")).is_empty() else ""]
     var lines: Array[String] = []
     for e in state.events.slice(maxi(0, state.events.size()-50)):
         if e.kind == "reasoning": continue
@@ -393,18 +454,20 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     _write_rich(timeline, "\n".join(lines), true)
     _write_rich(journal_events, timeline.text, true)
     var new_ids: Array[String] = []
-    for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+    for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats","architecture_projects"]:
         for key in state.get(category,{}): new_ids.append(key)
     if new_ids != selector_ids:
         selector_ids = new_ids
         selector.clear()
-        for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+        for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats","architecture_projects"]:
             for entity in state.get(category,{}).values():
-                selector.add_item("%s / %s" % [category, entity.get("name", entity.id)])
+                selector.add_item("%s / %s" % [category, entity.get("title", entity.get("name", entity.id))])
     if selected in selector_ids:
         selector.select(selector_ids.find(selected))
     else:
         selected = "player"
+        view.selected = selected
+        selector.select(selector_ids.find(selected))
     _inspect()
     if actions_open: _refresh_action_lists()
 
@@ -472,7 +535,11 @@ func _inspect() -> void:
             var r: Dictionary = a.relationships[id]
             text += "%s\n  Trust %+.0f%% · Familiarity %.0f%%\n  Cooperation %.0f%% · Rivalry %.0f%%\n" % [UIStyle.safe(_name(id)),r.get("trust",0)*100,r.get("familiarity",0)*100,r.get("cooperation",0)*100,r.get("rivalry",0)*100]
         _write_rich(details,text)
-        var mind := UIStyle.heading("PERSONAL GOALS")
+        var mind := UIStyle.heading("COGNITION SOURCE")
+        var evidence: Dictionary = state.get("research_stats",{}).get("agents",{}).get(selected,{})
+        mind += "LLM replies accepted: %d\nLLM-origin actions/ticks: %d\nRule-based routine ticks: %d\n" % [int(a.get("reasoning_count",0)),int(evidence.get("llm_ticks",0)),int(evidence.get("deterministic_fallback_ticks",0))]
+        mind += "Plan state: %s\n\n" % UIStyle.safe(str(a.get("plan_status","idle")))
+        mind += UIStyle.heading("PERSONAL GOALS")
         for goal in a.goals.slice(-4): mind += "• %s\n" % UIStyle.safe(goal.get("description",goal))
         mind += "\n" + UIStyle.heading("PLAN  /  " + str(a.get("plan_status","idle")).capitalize())
         var plan: Array = a.get("plan",[])
@@ -505,11 +572,17 @@ func _inspect() -> void:
         for memory in a.memories.slice(-8): mind += "Tick %d · %s\n" % [memory.get("tick",0),UIStyle.safe(memory.get("content",""))]
         _write_rich(memory_details,mind)
     else:
-        for category in ["buildings","settlements","resources","wildlife","threats"]:
+        for category in ["buildings","settlements","resources","wildlife","threats","architecture_projects"]:
             if state.get(category,{}).has(selected):
                 var entity: Dictionary = state[category][selected]
                 home = entity.get("home",entity.id if category == "settlements" else "a")
-                var text := UIStyle.heading(str(entity.get("name",entity.get("kind",entity.get("species",category)))).capitalize())
+                var text := UIStyle.heading(str(entity.get("title",entity.get("name",entity.get("kind",entity.get("species",category))))).capitalize())
+                if category=="architecture_projects":
+                    text += "Status: %s\nParts: %d / %d\nPurpose: %s\n" % [UIStyle.safe(str(entity.get("state","active"))),int(entity.get("progress",0)),entity.get("parts",[]).size(),UIStyle.safe(str(entity.get("purpose","")))]
+                    text += "Designer: %s\nWorkers: %s\n\nSelect Build → Architecture → Continue design.\n" % [UIStyle.safe(str(entity.get("author",""))),UIStyle.safe(", ".join(entity.get("workers",[])))]
+                    _write_rich(details,text)
+                    _write_rich(memory_details,"Every built part consumed owned materials. Unbuilt plans remain pending until worked.")
+                    continue
                 if category=="threats":
                     text=UIStyle.heading("ZOMBIE  /  Wilderness threat")
                     text+="Health %.0f / %.0f · Stamina %.0f\n\n" % [entity.hp,entity.get("max_hp",35),entity.stamina]
@@ -572,6 +645,14 @@ func _update_conversations() -> void:
     _write_rich(journal_conversations,_conversation_text(show_all_conversations),true)
     var mode: String = state.get("cognition",{}).get("mode","offline")
     chat_status.text = "Offline · enable Ollama in Settings" if mode == "offline" else "Ready · select a nearby inhabitant"
+    if mode != "offline":
+        var player: Dictionary = state.get("agents",{}).get("player",{})
+        var partner: Dictionary = state.get("agents",{}).get(selected,{})
+        if not player.is_empty() and not partner.is_empty() and selected != "player":
+            var dist: float = Vector2(float(player.x),float(player.y)).distance_to(Vector2(float(partner.x),float(partner.y)))
+            chat_status.text = "%s · %.1f tiles away%s" % [_name(selected),dist," · move closer (max 3)" if dist > 3 else " · in talking range"]
+        elif selected == "player":
+            chat_status.text = "Select a nearby NPC from map or list to speak"
     var jobs: Dictionary = state.get("cognition",{}).get("agents",{})
     if jobs.has(selected): chat_status.text = "%s · %s" % [_name(selected),str(jobs[selected]).capitalize()]
     for c in state.get("conversations",{}).values():
@@ -757,6 +838,7 @@ func _unhandled_input(event: InputEvent) -> void:
                         if dist < closest:
                             selected = entity.id
                             closest = dist
+                view.follow_agent = false
                 _inspect()
     elif event is InputEventMouseMotion and panning:
         view.follow_agent = false
@@ -868,12 +950,51 @@ func _make_actions() -> void:
     use_site.text = "Use the explicit map tile below"
     build.add_child(use_site)
     action_fields.use_site = use_site
-    action_amount(build, "Tile X", "site_x", 0, 200)
-    action_amount(build, "Tile Y", "site_y", 0, 200)
+    action_amount(build, "Tile X", "site_x", 0, 511)
+    action_amount(build, "Tile Y", "site_y", 0, 511)
     action_button(build, "Pick a tile on the map", func(): placing_site = true; actions_popup.hide(); status_label.text = "Click a map tile for the building site. Escape cancels.")
     action_button(build, "Start selected construction", _build_at_site)
     action_button(build, "Contribute work to selected project", func(): player_command({"action": "work", "building": selected}))
     action_button(build, "Repair selected building", func(): player_command({"action": "repair", "building": selected}))
+    var design_scroll := ScrollContainer.new()
+    design_scroll.name = "Architecture"
+    tabs.add_child(design_scroll)
+    var design := VBoxContainer.new()
+    design.custom_minimum_size.x = 555
+    design_scroll.add_child(design)
+    action_note(design,"Write your own block layout; no scripted castle blueprint. Layout entries: dx,dy,z,material separated by semicolons. Costs and support are checked by the engine.")
+    var architect_title_row := action_row(design, "Project name")
+    var architect_title := LineEdit.new()
+    architect_title.text = "My custom structure"
+    architect_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    architect_title_row.add_child(architect_title)
+    action_fields.architect_title = architect_title
+    var architect_purpose_row := action_row(design,"Purpose")
+    var architect_purpose := LineEdit.new()
+    architect_purpose.text = "A structure I designed"
+    architect_purpose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    architect_purpose_row.add_child(architect_purpose)
+    action_fields.architect_purpose = architect_purpose
+    action_amount(design,"Anchor X","architect_x",0,511)
+    action_amount(design,"Anchor Y","architect_y",0,511)
+    action_fields.architect_x.value = 14
+    action_fields.architect_y.value = 15
+    var architect_layout := TextEdit.new()
+    architect_layout.custom_minimum_size = Vector2(535,105)
+    architect_layout.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    architect_layout.text = "0,0,0,stone;1,0,0,wood;2,0,0,stone;0,0,1,bricks;1,0,1,planks"
+    design.add_child(architect_layout)
+    action_fields.architect_layout = architect_layout
+    action_button(design,"Register my original design",func():player_command({"action":"design_structure","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"title":action_fields.architect_title.text,"purpose":action_fields.architect_purpose.text,"layout":action_fields.architect_layout.text.strip_edges()}))
+    action_button(design,"Start / continue selected design",func():player_command({"action":"work_structure","project":selected}))
+    action_button(design,"Start nearest home design",func():player_command({"action":"work_structure"}))
+    action_options(design,"Part material","architect_material",["stone","wood","bricks","planks","door","stairs"])
+    action_amount(design,"Layer / height","architect_z",0,5)
+    action_button(design,"Place single part at X/Y/Z",func():player_command({"action":"place_block","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"kind":action_value("architect_material")}))
+    action_button(design,"Dismantle selected X/Y/Z part",func():player_command({"action":"remove_block","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value)}))
+    action_button(design,"Open modular door at X/Y/Z",func():player_command({"action":"toggle_modular_door","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"open":true}))
+    action_button(design,"Close modular door at X/Y/Z",func():player_command({"action":"toggle_modular_door","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"open":false}))
+    action_button(design,"Cancel selected design",func():player_command({"action":"cancel_structure","project":selected}))
     var life := VBoxContainer.new()
     life.name="Survival"
     tabs.add_child(life)

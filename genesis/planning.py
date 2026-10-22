@@ -6,6 +6,14 @@ SCHEMAS = {
     'move': {'target': 'visible/remembered entity id OR x and y coordinates', 'x': 'number optional', 'y': 'number optional'},
     'observe': {}, 'rest': {}, 'sleep': {}, 'eat': {}, 'drink': {},
     'gather': {'resource': 'resource id in perception'},
+    'design_structure': {'x':'integer anchor x within 12 tiles','y':'integer anchor y within 12 tiles',
+                         'title':'your chosen name (1..60 characters)','purpose':'your chosen practical purpose',
+                         'layout':'1..96 relative parts as dx,dy,z,material;...; materials stone/wood/bricks/planks/door/stairs, z 0..5'},
+    'work_structure': {'project':'optional existing nearby home design id'},
+    'place_block': {'x':'integer tile','y':'integer tile','z':'integer height 0..5','kind':'stone/wood/bricks/planks/door/stairs'},
+    'remove_block': {'x':'integer tile','y':'integer tile','z':'integer height'},
+    'toggle_modular_door': {'x':'integer tile','y':'integer tile','z':'integer height','open':'boolean'},
+    'cancel_structure': {'project':'home design id; only author/council may cancel'},
     'store': {'kind': 'resource name', 'amount': 'positive number'},
     'retrieve': {'kind': 'resource name', 'amount': 'positive number'},
     'build': {'kind': 'supported building id from building_costs, including furnace/blacksmith/mine/campfire/wall/gate', 'x': 'optional site x', 'y': 'optional site y'},
@@ -72,7 +80,7 @@ def validate_plan(data):
         if set(item) - {'action', *SCHEMAS[action]}:
             raise ValueError(f'Unsupported fields for {action}')
         for value in item.values():
-            if isinstance(value, (dict, list)) or (isinstance(value, str) and len(value) > 1200):
+            if isinstance(value, (dict, list)) or (isinstance(value, str) and len(value) > (2048 if item.get('action')=='design_structure' and value==item.get('layout') else 1200)):
                 raise ValueError('Action fields must be bounded scalars')
             if isinstance(value, float):
                 import math

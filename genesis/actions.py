@@ -31,6 +31,24 @@ def _execute(world, command, actor_id='player', planned=False):
         return fail('Resolve or disengage from the current conflict first.')
     target = world.agents.get(command.get('target'))
     try:
+        if action in ('design_structure','work_structure','place_block','remove_block','toggle_modular_door','cancel_structure'):
+            from . import architecture
+            if action == 'design_structure': return architecture.propose(world,a,command)
+            if action == 'work_structure':
+                result = architecture.work(world,a,command)
+                if a.player:
+                    a.architecture_job = None
+                    if result.get('ok') and result.get('pending'):
+                        chosen = command.get('project')
+                        if not chosen:
+                            chosen = next((p['id'] for p in sorted(world.architecture_projects.values(),key=lambda p:p['created'])
+                                           if p['home']==a.home and p['state']=='active'),None)
+                        a.architecture_job = chosen
+                return result
+            if action == 'place_block': return architecture.direct(world,a,command)
+            if action == 'remove_block': return architecture.remove(world,a,command)
+            if action == 'toggle_modular_door': return architecture.toggle(world,a,command)
+            return architecture.cancel(world,a,command)
         if action in ACTIONS:return family_action(world,a,command)
         if action in ('threat_response', 'warn', 'report_threat'):
             from . import threats
@@ -43,6 +61,7 @@ def _execute(world, command, actor_id='player', planned=False):
             from .threats import repel
             return repel(world,a,command.get('target'))
         if action in ('mine','fish','hunt','collect_water','plant','harvest','irrigate','fuel','extinguish','repair_equipment','gate'):
+            if a.player: a.architecture_job=None
             from .survival import action as survival_action
             return survival_action(world,a,{**command,'_continuous':not planned})
         if action == 'produce':
@@ -53,6 +72,7 @@ def _execute(world, command, actor_id='player', planned=False):
             return cancel(world,a)
         if action == 'move':
             a.extraction['auto']=False
+            if a.player: a.architecture_job=None
             entity = next((collection.get(command.get('target')) for collection in
                            (world.agents, world.resources, world.buildings, world.settlements) if command.get('target') in collection), None)
             if entity and planned and entity.id != a.home and entity.id not in a.observations and entity.id not in a.property and combat.distance(a, entity) > 9:

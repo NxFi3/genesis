@@ -54,6 +54,7 @@ class Agent:
     carry_capacity: float = 120
     extraction: dict = field(default_factory=dict)
     production_job: str | None = None
+    architecture_job: str | None = None
     equipment_condition: dict = field(default_factory=dict)
     plan: list = field(default_factory=list)
     plan_index: int = 0

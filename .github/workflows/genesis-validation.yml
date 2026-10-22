@@ -1,0 +1,71 @@
+name: Genesis Python validation
+on:
+  push:
+    branches:
+      - feature/genesis-emergent-builders
+  pull_request:
+    branches:
+      - feature/genesis-large-world-geology
+  workflow_dispatch:
+
+jobs:
+  python-regressions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run all Python regressions
+        run: python -m unittest discover -s tests -q
+  godot-import:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Godot 4.6.3 stable CLI
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp
+          sudo install -m 755 /tmp/Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+      - name: Import and parse Godot project
+        run: |
+          set -eo pipefail
+          godot --headless --editor --path godot --import --quit 2>&1 | tee /tmp/godot-import.log
+          if grep -E "SCRIPT ERROR|Parse Error|Error parsing" /tmp/godot-import.log; then exit 1; fi
+      - name: Exercise Godot smoke checks against running Python world
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from genesis.world import World
+          from genesis.actions import execute
+          from genesis.persistence import save
+          world = World(42, 4, 48, 30)
+          actor = world.agents['player']
+          actor.x, actor.y = 19, 15
+          actor.inventory.update(stone=8, wood=8, planks=8, bricks=8)
+          result = execute(world, {'action':'design_structure',
+            'title':'Created in CI by a model-compatible design command',
+            'purpose':'Exercise renderer and saved project snapshot',
+            'x':18,'y':16,
+            'layout':'0,0,0,stone;1,0,0,door;2,0,0,wood;0,0,1,bricks'}, actor.id)
+          assert result['ok'], result
+          for _ in range(2):
+              world.tick += 1
+              worked=execute(world,{'action':'work_structure','project':result['project']},actor.id)
+              assert worked['ok'], worked
+          save(world, '/tmp/genesis-godot-ci.sqlite')
+          PY
+          python3 -m genesis.server --offline --port 8768 --save /tmp/genesis-godot-ci.sqlite &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8768/health >/dev/null; then break; fi
+            sleep 0.5
+          done
+          bash scripts/check_client.sh http://127.0.0.1:8768
