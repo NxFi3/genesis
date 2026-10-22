@@ -960,6 +960,9 @@ class World:
                         families.dependent(self,a)
                         continue
                     if a.player:
+                        if a.architecture_job:
+                            outcome=architecture.work(self,a,{'project':a.architecture_job})
+                            if not outcome.get('ok') or not outcome.get('pending'): a.architecture_job=None
                         if a.extraction.get('auto'):
                             outcome=survival.action(self,a,{'action':a.extraction['action'],'resource':a.extraction['target'],'_continuous':True})
                             if not outcome['ok'] or not outcome.get('pending'): a.extraction['auto']=False
