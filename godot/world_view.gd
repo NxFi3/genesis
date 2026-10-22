@@ -122,6 +122,17 @@ func _draw() -> void:
     var buildings: Array = state.buildings.values()
     buildings.sort_custom(func(a,b): return a.y < b.y)
     for building in buildings: draw_building(building)
+    for part in state.get("blocks", {}).values():
+        var p := (Vector2(float(part.x), float(part.y)) + Vector2(.5,.5)) * TILE
+        var height_offset: float = float(part.z) * 2
+        var color: Color = {"stone":Color("a8aea3"),"wood":Color("866549"),
+            "bricks":Color("ab785d"),"planks":Color("c5a16d"),
+            "door":Color("956a46"),"stairs":Color("c2c2b5")}.get(str(part.kind),Color("a8aea3"))
+        draw_rect(Rect2(p-Vector2(9,9+height_offset),Vector2(18,18)),color)
+        if part.kind=="door" and bool(part.get("open",true)):
+            draw_line(p+Vector2(-5,-4-height_offset),p+Vector2(5,4-height_offset),Color("dce4d8"),2)
+        if int(part.z)>0:
+            draw_rect(Rect2(p-Vector2(5,5+height_offset),Vector2(10,10)),color.lightened(.15))
     for animal in state.wildlife.values(): draw_animal(animal)
     for threat in state.get("threats",{}).values(): draw_zombie(threat)
     for c in state.conflicts.values():
