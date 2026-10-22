@@ -296,6 +296,7 @@ class Scheduler:
         agent = world.agents.get(job.agent)
         if job.epoch != self.epoch or not agent or agent.cognition_revision != job.revision or world.tick-job.tick > self.config.budget_window or agent.incapacitated:
             self.metrics['stale'] += 1
+            self.metrics['last_error'] = 'A completed model response was discarded because the world or agent changed before it arrived.'
             return
         c = world.conversations.get(job.conversation) if job.conversation else None
         if c and c['state'] != 'active':
@@ -316,6 +317,7 @@ class Scheduler:
             audit_proposal(world,agent.id,response.get('data'),'rejected')
             self.metrics['failed'] += 1
             agent.plan_error = f'Model proposal rejected: {exc}'
+            self.metrics['last_error'] = agent.plan_error[:250]
             agent.next_reason_tick = world.tick+5
             if c:
                 c['state'], c['error'] = 'failed', agent.plan_error
