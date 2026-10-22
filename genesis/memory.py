@@ -1,6 +1,7 @@
 """Private, bounded, provenance-aware cognition contexts."""
 import json
 import re
+import math
 from .combat import distance
 from .environment import conditions
 
@@ -43,7 +44,26 @@ def perceive(world, agent):
             agent.observations[settlement.id] = {'id': settlement.id, 'kind': 'settlement', 'name': settlement.name, 'x': settlement.x, 'y': settlement.y, 'observed_tick': world.tick}
     # Geography may be remembered, resource quantities are explicitly old observations.
     agent.observations = dict(list(agent.observations.items())[-80:])
+    nearby_projects = []
+    for project in world.architecture_projects.values():
+        if project['state'] != 'active' or project['home'] != agent.home:
+            continue
+        if min(math.hypot(agent.x-b['x'], agent.y-b['y']) for b in project['parts']) <= 10:
+            nearby_projects.append({'id': project['id'], 'kind': 'modular_project',
+                                    'name': project['title'], 'purpose': project['purpose'],
+                                    'progress': project['progress'], 'total': len(project['parts']),
+                                    'origin': [project['parts'][0]['x'],project['parts'][0]['y']]})
+    nearby_projects = nearby_projects[:6]
+    x0, y0 = max(0, int(round(agent.x))-3), max(0, int(round(agent.y))-3)
+    local_ground = []
+    legend = {'plains': '.', 'forest': 'f', 'mountain': 'm', 'farmland': 'a', 'road': '=',
+              'river': '~', 'lake': '~'}
+    for yy in range(y0, min(world.height, y0+7)):
+        local_ground.append(''.join(legend.get(world.terrain[yy][xx], '?') if world.passable(xx, yy) else '#'
+                                    for xx in range(x0,min(world.width,x0+7))))
     return {'location': [round(agent.x, 2), round(agent.y, 2)], 'tick': world.tick,
+            'nearby_architecture':nearby_projects,
+            'local_ground':{'x':x0,'y':y0,'rows':local_ground,'legend':'. plains, f forest, m mountain, a farm, = road, ~ water, # blocked'},
             'climate': conditions(world,agent.x,agent.y), 'season': world.season, 'day_phase': 'day' if world.daylight else 'night', 'weather': world.weather,
             'nearby_agents': [{'id': a.id, 'name': a.name, 'home': a.home, 'activity': a.activity,
                                'x': round(a.x, 2), 'y': round(a.y, 2)} for a in nearby],
@@ -70,7 +90,7 @@ def context(world, agent, query='', limit=12000, partner_id=None):
              'inventory': agent.inventory, 'carry_capacity':agent.carry_capacity, 'production_job':world.production_jobs.get(agent.production_job), 'equipment': agent.equipment, 'perception': perception,
              'knowledge': relevant, 'relationships': dict(relations),
              'semantic_memory': sorted(agent.semantic_memory, key=rank, reverse=True)[:3],
-             'projects': [b for b in perception['buildings'] if not b['complete']],
+             'projects': [b for b in perception['buildings'] if not b['complete']] + perception['nearby_architecture'],
              'goals': agent.goals[-5:], 'long_term_goals': agent.long_term_goals[-4:],
              'commitments': agent.commitments[-8:], 'plan': [{k: v for k, v in step.items() if not k.startswith('_')} for step in agent.plan[agent.plan_index:agent.plan_index+8]],
              'plan_status': agent.plan_status, 'plan_goal': agent.plan_goal, 'plan_feedback': agent.plan_feedback,

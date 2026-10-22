@@ -86,6 +86,8 @@ def validate_world(world):
         inventory(job.get('escrow',{}))
         require(job['escrow']==PRODUCTION[job['recipe']]['inputs'] if job['state']=='working' else not job['escrow'],'invalid reserved production inputs')
     for bid,opened in world.gates.items(): require(bid in world.buildings and world.buildings[bid].kind=='gate' and type(opened) is bool,'invalid gate state')
+    from .architecture import validate_world as validate_architecture
+    validate_architecture(world)
     for animal in world.wildlife.values():
         position(animal)
         require(finite(animal.hp,0,100) and finite(animal.hunger,0,100) and animal.species in ('deer','boar','wolf','sheep') and type(animal.harvested) is bool,'invalid wildlife')

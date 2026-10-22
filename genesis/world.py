@@ -8,7 +8,7 @@ import re
 
 from .models import Agent, Settlement, Resource, Building, Wildlife, Conflict
 from . import combat
-from . import environment, registry, survival, production, threats, families, controls, analytics
+from . import environment, registry, survival, production, threats, families, controls, analytics, architecture
 from .worldsystems import BUILDING_TYPES, initialize
 
 BUILDINGS = {
@@ -60,6 +60,7 @@ class World:
         self.next_shipment = 1
         self.event_sink = None
         self._paths = {}
+        self.blocks, self.architecture_projects, self.next_structure = {}, {}, 1
         controls.initialize(self)
         analytics.initialize(self)
         self._generate(population)
@@ -191,7 +192,7 @@ class World:
         if getattr(self,'_blocked_tick',-1)!=self.tick:
             self._blocked_cells={(round(b.x),round(b.y)) for b in self.buildings.values() if b.complete and b.condition>0 and (b.kind=='wall' or b.kind=='gate' and not self.gates.get(b.id,True))}
             self._blocked_tick=self.tick
-        return (ix,iy) not in self._blocked_cells
+        return (ix,iy) not in self._blocked_cells and architecture.traversable(self, ix, iy)
 
     def neighbors(self, x, y):
         x, y = round(x), round(y)
@@ -528,6 +529,7 @@ class World:
         if work_commitments(self, a):
             return
         if threats.maintain(self, a): return
+        if architecture.autonomous(self,a): return
         if production.autonomous(self,a): return
         if survival.autonomous(self,a): return
         injured = next((b for b in self.agents.values() if b.id != a.id and b.incapacitated and not self.active(b.id) and combat.distance(a, b) <= 2), None)
@@ -998,6 +1000,7 @@ class World:
         for name in ('agents', 'settlements', 'resources', 'buildings', 'wildlife', 'conflicts'):
             result[name] = {k: asdict(v) for k, v in getattr(self, name).items()}
         result.update(worldgen=self.worldgen,navigation=self.navigation)
+        result.update(blocks=self.blocks,architecture_projects=self.architecture_projects,next_structure=self.next_structure)
         result.update(demography=self.demography,households=self.households,family_archive=self.family_archive,family_offers=self.family_offers,estates=self.estates,next_person=self.next_person,systems_version=4)
         result.update(controls=self.controls,research_stats=self.research_stats,action_history=self.action_history,shared_reports=self.shared_reports)
         result['events'] = self.events if full else self.events[-80:]
@@ -1025,7 +1028,7 @@ class World:
         w._paths = {k: (tuple(v[0]), [tuple(p) for p in v[1]]) for k, v in data.get('paths', {}).items()}
         w.rng = random.Random()
         w.rng.setstate(tuples(data['rng_state']))
-        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation','demography','households','family_archive','family_offers','estates','next_person','controls','research_stats','action_history','shared_reports'):
+        for name in ('elevation','climate','crops','fires','production_jobs','gates','threats','worldgen','navigation','demography','households','family_archive','family_offers','estates','next_person','controls','research_stats','action_history','shared_reports','blocks','architecture_projects','next_structure'):
             if name in data: setattr(w,name,data[name])
         initialize(w)
         from .validation import validate_world

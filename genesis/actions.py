@@ -31,6 +31,14 @@ def _execute(world, command, actor_id='player', planned=False):
         return fail('Resolve or disengage from the current conflict first.')
     target = world.agents.get(command.get('target'))
     try:
+        if action in ('design_structure','work_structure','place_block','remove_block','toggle_modular_door','cancel_structure'):
+            from . import architecture
+            if action == 'design_structure': return architecture.propose(world,a,command)
+            if action == 'work_structure': return architecture.work(world,a,command)
+            if action == 'place_block': return architecture.direct(world,a,command)
+            if action == 'remove_block': return architecture.remove(world,a,command)
+            if action == 'toggle_modular_door': return architecture.toggle(world,a,command)
+            return architecture.cancel(world,a,command)
         if action in ACTIONS:return family_action(world,a,command)
         if action in ('threat_response', 'warn', 'report_threat'):
             from . import threats
