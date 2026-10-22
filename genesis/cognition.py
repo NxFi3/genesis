@@ -485,7 +485,8 @@ class Scheduler:
                 if not c or c['state'] != 'active' or c.get('next_speaker') != job.agent:
                     self.metrics['stale'] += 1
                     continue
-            if job.revision != agent.cognition_revision or world.tick - job.tick > 40:
+            changed_inventory = (job.context.get('agent', {}).get('inventory') != agent.inventory)
+            if job.revision != agent.cognition_revision or world.tick - job.tick > 40 or changed_inventory:
                 # Discard changed or very old observations, but DO NOT require
                 # the exact same tick: otherwise a busy local GPU starves jobs
                 # waiting in the queue while the simulation continues.
