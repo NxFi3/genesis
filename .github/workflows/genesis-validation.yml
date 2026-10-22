@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - feature/genesis-emergent-builders
+  pull_request:
+    branches:
+      - feature/genesis-large-world-geology
   workflow_dispatch:
 
 jobs:
