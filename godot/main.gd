@@ -11,7 +11,8 @@ var god_panel: PopupPanel
 const FlatView = preload("res://world_view.gd")
 var flat_renderer := false
 var state: Dictionary = {}
-var selected := "a0"
+var selected := "player"
+var player_focused_once := false
 var player_mode := true
 var poll: HTTPRequest
 var sender: HTTPRequest
@@ -125,9 +126,11 @@ func _make_ui() -> void:
     top_stats = label_at("Connecting to local simulation…", Vector2(24, 64), 14)
     cognition_stats = label_at("OFFLINE — local deterministic decisions", Vector2(24, 88), 13)
     button_at("God Mode",Vector2(775,15),_open_god_mode,110)
-    mode_button = button_at("Player mode", Vector2(900, 15), _toggle_mode, 130)
+    mode_button = button_at("Mode: Player", Vector2(900, 15), _toggle_mode, 130)
+    mode_button.tooltip_text = "Player controls WASD; Observer moves the camera instead."
     button_at("Pause / Resume", Vector2(1040, 15), func(): send({"action": "pause", "paused": not state.get("paused", false)}), 145)
     button_at("Settings", Vector2(1195, 15), _open_settings, 70)
+    button_at("Find me", Vector2(785, 53), _find_me, 104)
     button_at("Save", Vector2(900, 53), func(): send({"action": "save"}), 70)
     button_at("Load", Vector2(977, 53), func(): send({"action": "load"}), 70)
     button_at("1×", Vector2(1054, 53), func(): send({"action": "speed", "speed": 2}), 50)
@@ -222,9 +225,21 @@ func _open_god_mode() -> void:
     god_panel.update_world(state)
     god_panel.popup_centered()
 
+func _find_me() -> void:
+    if state.is_empty() or not state.get("agents", {}).has("player"):
+        status_label.text = "Your Traveler is not loaded yet."
+        return
+    selected = "player"
+    view.selected = "player"
+    view.focus_selected()
+    view.follow_agent = true
+    _inspect()
+    status_label.text = "Following your gold Traveler. WASD moves you in Player mode."
+
+
 func _toggle_mode() -> void:
     player_mode = not player_mode
-    mode_button.text = "Player mode" if player_mode else "Observer mode"
+    mode_button.text = "Mode: Player" if player_mode else "Mode: Observer"
     for item in player_buttons:
         item.disabled = not player_mode
     dialogue.editable = player_mode
@@ -237,8 +252,20 @@ func player_command(command: Dictionary) -> void:
         status_label.text = "Switch to Player mode to act in the world."
 
 func _talk() -> void:
+    if not player_mode:
+        status_label.text = "Switch to Mode: Player before speaking."
+        return
     if dialogue.text.strip_edges().is_empty():
         status_label.text = "Enter a message first."
+        return
+    var player: Dictionary = state.get("agents", {}).get("player", {})
+    var target: Dictionary = state.get("agents", {}).get(selected, {})
+    if player.is_empty() or target.is_empty() or selected == "player":
+        status_label.text = "Select another inhabitant from the right-hand list or map."
+        return
+    var distance_to_target: float = Vector2(float(player.x),float(player.y)).distance_to(Vector2(float(target.x),float(target.y)))
+    if distance_to_target > 3.0:
+        status_label.text = "Too far to talk: %.1f tiles. Walk within 3 tiles using WASD; Find me returns to your Traveler." % distance_to_target
         return
     player_command({"action": "talk", "target": selected, "message": dialogue.text})
     history_tabs.current_tab = 1
@@ -369,6 +396,9 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     god_panel.update_world(state)
     view.accept_state(state)
     view.selected = selected
+    if not player_focused_once and state.get("agents",{}).has("player"):
+        player_focused_once = true
+        _find_me()
     var environment: Dictionary = state.get("environment", {})
     top_stats.text = "%s · %s · Day %d, %02d:00 · %d inhabitants · %d buildings · %s" % [str(state.season).capitalize(),str(state.get("weather","clear")).capitalize(),1+int(state.tick)/240,int(state.get("hour",0)),state.agents.size()-1,state.buildings.size(),"Paused" if state.get("paused",false) else "Living world"]
     top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick · %d modular blocks · %d designs" % [state.tick,state.get("tick_ms",0),state.get("blocks",{}).size(),state.get("architecture_projects",{}).size()]
@@ -383,7 +413,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     if cognition.get("mode","offline") == "offline":
         cognition_stats.text = "OFFLINE · Deterministic simulation · Enable local Ollama in Settings"
     else:
-        cognition_stats.text = "LLM MINDS · %s · %d thinking · %d queued%s" % [config.get("model","local model"),metrics.get("inflight",0),metrics.get("queued",0)," · Provider error (hover for details)" if not str(metrics.get("last_error","")).is_empty() else ""]
+        cognition_stats.text = "LLM MINDS · %s · OK %d · Failed %d · Thinking %d · Queue %d%s" % [config.get("model","local model"),metrics.get("completed",0),metrics.get("failed",0),metrics.get("inflight",0),metrics.get("queued",0)," · ERROR (hover)" if not str(metrics.get("last_error","")).is_empty() else ""]
     var lines: Array[String] = []
     for e in state.events.slice(maxi(0, state.events.size()-50)):
         if e.kind == "reasoning": continue
@@ -405,6 +435,8 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
         selector.select(selector_ids.find(selected))
     else:
         selected = "player"
+        view.selected = selected
+        selector.select(selector_ids.find(selected))
     _inspect()
     if actions_open: _refresh_action_lists()
 
@@ -472,7 +504,11 @@ func _inspect() -> void:
             var r: Dictionary = a.relationships[id]
             text += "%s\n  Trust %+.0f%% · Familiarity %.0f%%\n  Cooperation %.0f%% · Rivalry %.0f%%\n" % [UIStyle.safe(_name(id)),r.get("trust",0)*100,r.get("familiarity",0)*100,r.get("cooperation",0)*100,r.get("rivalry",0)*100]
         _write_rich(details,text)
-        var mind := UIStyle.heading("PERSONAL GOALS")
+        var mind := UIStyle.heading("COGNITION SOURCE")
+        var evidence: Dictionary = state.get("research_stats",{}).get("agents",{}).get(selected,{})
+        mind += "LLM replies accepted: %d\nLLM-origin actions/ticks: %d\nRule-based routine ticks: %d\n" % [int(a.get("reasoning_count",0)),int(evidence.get("llm_ticks",0)),int(evidence.get("deterministic_fallback_ticks",0))]
+        mind += "Plan state: %s\n\n" % UIStyle.safe(str(a.get("plan_status","idle")))
+        mind += UIStyle.heading("PERSONAL GOALS")
         for goal in a.goals.slice(-4): mind += "• %s\n" % UIStyle.safe(goal.get("description",goal))
         mind += "\n" + UIStyle.heading("PLAN  /  " + str(a.get("plan_status","idle")).capitalize())
         var plan: Array = a.get("plan",[])
@@ -578,6 +614,14 @@ func _update_conversations() -> void:
     _write_rich(journal_conversations,_conversation_text(show_all_conversations),true)
     var mode: String = state.get("cognition",{}).get("mode","offline")
     chat_status.text = "Offline · enable Ollama in Settings" if mode == "offline" else "Ready · select a nearby inhabitant"
+    if mode != "offline":
+        var player: Dictionary = state.get("agents",{}).get("player",{})
+        var partner: Dictionary = state.get("agents",{}).get(selected,{})
+        if not player.is_empty() and not partner.is_empty() and selected != "player":
+            var dist: float = Vector2(float(player.x),float(player.y)).distance_to(Vector2(float(partner.x),float(partner.y)))
+            chat_status.text = "%s · %.1f tiles away%s" % [_name(selected),dist," · move closer (max 3)" if dist > 3 else " · in talking range"]
+        elif selected == "player":
+            chat_status.text = "Select a nearby NPC from map or list to speak"
     var jobs: Dictionary = state.get("cognition",{}).get("agents",{})
     if jobs.has(selected): chat_status.text = "%s · %s" % [_name(selected),str(jobs[selected]).capitalize()]
     for c in state.get("conversations",{}).values():
