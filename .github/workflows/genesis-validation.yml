@@ -20,3 +20,21 @@ jobs:
           python-version: '3.12'
       - name: Run all Python regressions
         run: python -m unittest discover -s tests -q
+  godot-import:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Godot 4.6.3 stable CLI
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp
+          sudo install -m 755 /tmp/Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+      - name: Import and parse Godot project
+        run: |
+          set -eo pipefail
+          godot --headless --editor --path godot --import --quit 2>&1 | tee /tmp/godot-import.log
+          if grep -E "SCRIPT ERROR|Parse Error|Error parsing" /tmp/godot-import.log; then exit 1; fi
