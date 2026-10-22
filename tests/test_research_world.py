@@ -27,7 +27,7 @@ class ResearchWorldTests(unittest.TestCase):
     def test_large_world_has_reproducible_finite_regional_ore(self):
         from genesis.registry import MINERALS
         first = World(42, 2, 128, 128)
-        veins = {r.id: (r.kind, r.x, r.y, r.quantity, r.regen)
+        veins = {r.id: (r.kind, r.x, r.y, r.quantity, r.regeneration)
                  for r in first.resources.values() if r.source == 'geologic_vein'}
         self.assertEqual(len(veins), 16)
         self.assertGreater(len({item[0] for item in veins.values()}), 2)
@@ -36,9 +36,21 @@ class ResearchWorldTests(unittest.TestCase):
         self.assertTrue(any(x >= 64 and y >= 64 for _, x, y, _, _ in veins.values()))
         self.assertTrue(all(first.passable(x, y) for _, x, y, _, _ in veins.values()))
         second = World(42, 2, 128, 128)
-        again = {r.id: (r.kind, r.x, r.y, r.quantity, r.regen)
+        again = {r.id: (r.kind, r.x, r.y, r.quantity, r.regeneration)
                  for r in second.resources.values() if r.source == 'geologic_vein'}
         self.assertEqual(veins, again)
+
+        from genesis.actions import execute
+        ore = next(r for r in first.resources.values() if r.source == 'geologic_vein')
+        traveler = first.agents['player']
+        traveler.x, traveler.y = ore.x, ore.y
+        original = ore.quantity
+        for _ in range(4):
+            first.tick += 1
+            result = execute(first, {'action': 'mine', 'resource': ore.id}, traveler.id, True)
+            self.assertTrue(result['ok'])
+        self.assertEqual(ore.quantity, original - 1)
+        self.assertEqual(traveler.inventory[ore.kind], 1)
 
     def test_navigation_obeys_closed_barriers_and_returns_cardinal_path(self):
         from genesis.models import Building
