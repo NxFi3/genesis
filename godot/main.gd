@@ -678,7 +678,7 @@ func _new_world_dialog() -> void:
     var dialog := ConfirmationDialog.new()
     dialog.title = "Create a new world"
     dialog.dialog_text = "Replaces the current in-memory world. Save first to retain it."
-    dialog.size = Vector2i(470, 220)
+    dialog.size = Vector2i(535, 280)
     var row := HBoxContainer.new()
     row.position = Vector2(20, 90)
     seed_input = LineEdit.new()
@@ -693,7 +693,29 @@ func _new_world_dialog() -> void:
     population_input.tooltip_text = "Inhabitants per settlement"
     row.add_child(population_input)
     dialog.add_child(row)
-    dialog.confirmed.connect(func(): send({"action": "new", "seed": int(seed_input.text), "population": int(population_input.value)}); dialog.queue_free())
+    var sizes: Array[Vector2i] = [Vector2i(48, 30), Vector2i(96, 96), Vector2i(128, 128), Vector2i(256, 256)]
+    var size_row := HBoxContainer.new()
+    size_row.position = Vector2(20, 135)
+    var caption := Label.new()
+    caption.text = "World size"
+    caption.custom_minimum_size.x = 105
+    size_row.add_child(caption)
+    var size_choice := OptionButton.new()
+    size_choice.custom_minimum_size.x = 280
+    for label in ["48 x 30 (legacy)", "96 x 96 (recommended)", "128 x 128 (large)", "256 x 256 (experimental)"]:
+        size_choice.add_item(label)
+    size_choice.select(1)
+    size_row.add_child(size_choice)
+    dialog.add_child(size_row)
+    var warning := Label.new()
+    warning.position = Vector2(20, 175)
+    warning.text = "Existing saves keep their old size. Large maps may render slowly."
+    dialog.add_child(warning)
+    dialog.confirmed.connect(func():
+        var chosen: Vector2i = sizes[size_choice.selected]
+        send({"action": "new", "seed": int(seed_input.text), "population": int(population_input.value), "width": chosen.x, "height": chosen.y})
+        dialog.queue_free()
+    )
     dialog.canceled.connect(func(): dialog.queue_free())
     add_child(dialog)
     dialog.popup_centered()

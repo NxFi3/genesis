@@ -4,6 +4,10 @@ This development edition preserves the validated Genesis 3 and Dynamic Threats w
 
 ## Start and observe
 
+New CLI worlds default to 96 × 96 tiles (previously 48 × 30), without resizing existing SQLite saves. In the Godot **New world** dialog choose 48 × 30, 96 × 96, 128 × 128 or the experimental 256 × 256 preset. Use a new save path to prevent replacing an earlier civilization. Larger maps focus the initial camera on Willowmere; the Map button still shows the whole world. Camera clipping and excessive decorative foliage on very large maps are reduced, but full terrain mesh generation, snapshot transfer and renderer chunk streaming remain performance limits. 256 × 256 is not FPS-validated on the target computer.
+
+Regional finite surface mineral veins now appear throughout coherent large worlds. Mining consumes vein stock over multiple simulation ticks, benefits from nearby completed mine sites, and supports recipes for smelting. **Underground tunnels, vertical layers, excavation and cave networks are not implemented.** Existing worlds retain their original geology; create a new world to see the new veins.
+
 ```sh
 python3 run.py --headless --offline --width 128 --height 128
 python3 run.py --offline --width 64 --height 64

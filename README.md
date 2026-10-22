@@ -19,6 +19,8 @@ The latest version adds an orthographic 3D world, original low-poly assets, time
 
 ## Start locally
 
+On this experimental development branch new command-line worlds default to **96 × 96** tiles; existing saves are never resized. The Godot **New world** dialog offers 48 × 30, 96 × 96, 128 × 128 and experimental 256 × 256 worlds. Use `--width 128 --height 128 --save data/large-world.sqlite` to keep a separate 128² world. Camera range and very-large-map decorative instance density were adjusted, but chunk-streamed rendering is not finished. Regional *surface* ore veins are finite and mineable; underground excavation is still missing. See [research guide](docs/research.md).
+
 Install **Python 3.11+** and **Godot 4.x** on PATH (`godot`, `godot4`, or `godot.exe`). Python uses only its standard library; no pip packages or cloud subscriptions are needed.
 
 ```sh

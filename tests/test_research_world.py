@@ -24,6 +24,22 @@ class ResearchWorldTests(unittest.TestCase):
         self.assertEqual(w.snapshot(True),loaded.snapshot(True))
         self.assertGreater(w.navigation['searches'],0)
 
+    def test_large_world_has_reproducible_finite_regional_ore(self):
+        from genesis.registry import MINERALS
+        first = World(42, 2, 128, 128)
+        veins = {r.id: (r.kind, r.x, r.y, r.quantity, r.regen)
+                 for r in first.resources.values() if r.source == 'geologic_vein'}
+        self.assertEqual(len(veins), 16)
+        self.assertGreater(len({item[0] for item in veins.values()}), 2)
+        self.assertTrue(all(kind in MINERALS and quantity > 0 and regen == 0
+                            for kind, _, _, quantity, regen in veins.values()))
+        self.assertTrue(any(x >= 64 and y >= 64 for _, x, y, _, _ in veins.values()))
+        self.assertTrue(all(first.passable(x, y) for _, x, y, _, _ in veins.values()))
+        second = World(42, 2, 128, 128)
+        again = {r.id: (r.kind, r.x, r.y, r.quantity, r.regen)
+                 for r in second.resources.values() if r.source == 'geologic_vein'}
+        self.assertEqual(veins, again)
+
     def test_navigation_obeys_closed_barriers_and_returns_cardinal_path(self):
         from genesis.models import Building
         w=World(42,1,128,128);w.terrain=[['plains']*128 for _ in range(128)]

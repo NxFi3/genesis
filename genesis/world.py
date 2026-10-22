@@ -150,6 +150,36 @@ class World:
                     kind='wood' if terrain=='forest' else 'water' if terrain in ('river','lake') else 'iron_ore' if terrain=='mountain' else 'food'
                     rid=f'geo_{cx}_{cy}'
                     self.resources[rid]=Resource(rid,kind,x,y,80,80,.08 if kind in ('food','wood','water') else 0,source='geographic')
+        if self.worldgen['mode'] == 'coherent':
+            # Deterministic, finite *surface* veins distributed across exploration regions.
+            # These are not underground shafts, caves or terrain excavation.
+            minerals = ('iron_ore', 'coal', 'copper_ore', 'silver_ore', 'gold_ore')
+            occupied = {(round(r.x), round(r.y)) for r in self.resources.values()}
+            for region_y in range(0, self.height, 32):
+                for region_x in range(0, self.width, 32):
+                    region_w = min(32, self.width - region_x)
+                    region_h = min(32, self.height - region_y)
+                    mineral = minerals[(self.seed + region_x // 32 * 3 + region_y // 32 * 7) % len(minerals)]
+                    location = None
+                    # Prefer actual high ground, falling back to other walkable terrain.
+                    for terrain_kind in ('mountain', 'forest', 'plains'):
+                        for offset in range(region_w * region_h):
+                            xx = region_x + (self.seed + offset % region_w) % region_w
+                            yy = region_y + (self.seed // 3 + offset // region_w) % region_h
+                            if self.terrain[yy][xx] != terrain_kind or (xx, yy) in occupied:
+                                continue
+                            if self.passable(xx, yy):
+                                location = (xx, yy)
+                                break
+                        if location is not None:
+                            break
+                    if location is None:
+                        continue
+                    x, y = location
+                    quantity = 30 if mineral in ('gold_ore', 'silver_ore') else 65
+                    rid = f'geology_{region_x // 32}_{region_y // 32}'
+                    self.resources[rid] = Resource(rid, mineral, x, y, quantity, quantity, 0, source='geologic_vein')
+                    occupied.add((x, y))
         for r in self.resources.values():
             if r.kind in ('food', 'wood'):
                 self.resource_growth[r.id] = {'age': 0, 'stage': 'mature' if r.quantity > r.capacity * .5 else 'growing'}

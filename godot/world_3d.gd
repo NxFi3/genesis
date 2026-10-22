@@ -70,13 +70,15 @@ func _ready() -> void:
     scene.add_child(sunlight)
     camera = Camera3D.new()
     camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-    camera.far = 200
+    camera.far = 250
     scene.add_child(camera)
     _camera()
 
 func _camera() -> void:
     if camera == null: return
     camera.size = base_size/zoom
+    # The default 200-unit far plane clips distant parts of 128/256 maps.
+    camera.far = maxf(250.0, float(maxi(int(state.get('width', 48)), int(state.get('height', 30)))) * 2.5)
     camera.position = center+Vector3(38,38,38)
     camera.look_at(center,Vector3.UP)
 
@@ -138,7 +140,14 @@ func accept_state(value: Dictionary) -> void:
         deposit_hash=next
         _deposits()
     _entities()
-    if first: reset_camera()
+    if first:
+        reset_camera()
+        if maxi(int(state.width), int(state.height)) >= 96:
+            var home: Dictionary = state.get('settlements', {}).get('a', {})
+            if not home.is_empty():
+                center = Vector3(float(home.get('x', 9)), 0, float(home.get('y', 10)))
+                zoom = clampf(base_size / 72.0, 1.0, 6.0)
+                _camera()
 
 func _clear(node: Node) -> void:
     for child in node.get_children():
@@ -149,6 +158,8 @@ func _terrain() -> void:
     _clear(ground)
     _clear(foliage)
     batches.clear()
+    # Fewer decorative instances on huge maps; simulation geography is unchanged.
+    var detailed_foliage: bool = int(state.width) * int(state.height) <= 16384
     var surfaces: Dictionary = {}
     for y in range(state.height):
         for x in range(state.width):
@@ -173,11 +184,11 @@ func _terrain() -> void:
             for i in [0,2,1,0,3,2]:
                 st.set_color(color)
                 st.add_vertex(corners[i])
-            if kind == "forest" and (x*17+y*13)%4 != 0:
+            if kind == "forest" and (x*17+y*13)%4 != 0 and (detailed_foliage or (x+y)%3 == 0):
                 var tree := Art.tree(x+y*state.width)
                 _batch(tree,Vector3(x,height_at(x,y),y),float(x%6)*.8)
                 tree.free()
-            elif kind == "mountain" and (x+y)%4 == 0:
+            elif kind == "mountain" and (x+y)%4 == 0 and (detailed_foliage or (x*3+y)%2 == 0):
                 var rock := Node3D.new()
                 Art.part(rock,"sphere",Vector3(0,.3,0),Vector3(.8,.8,1.0),Color("929990"))
                 _batch(rock,Vector3(x,height_at(x,y),y),x*.3)
