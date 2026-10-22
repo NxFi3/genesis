@@ -517,6 +517,25 @@ class World:
                 a.shelter = max(0, a.shelter-8)
             return
         if survival.emergency(self,a): return
+        # In LLM mode the model, not the deterministic fallback, owns everyday
+        # goals, social choices, jobs, construction and voluntary movement.
+        # The engine still owns urgent physiology, physics and action validation.
+        if self.cognition_config.get('enabled', False):
+            talking = any(c.get('state') == 'active' and a.id in c.get('participants', [])
+                          for c in self.conversations.values())
+            if talking:
+                a.activity, a.reason = 'converse', 'Listening to an actual model-driven conversation'
+                return
+            from .planning import execute_plan
+            if execute_plan(self, a):
+                return
+            a.activity = 'consider'
+            a.reason = ('Awaiting LLM decision' if a.plan_status != 'failed'
+                        else 'Awaiting LLM revision after: '+a.plan_error[:100])
+            # No hidden farm/guard/market/mine/communication choice here.
+            # Stamina recovery is a physiological update, not a new goal.
+            combat.recover(a, False)
+            return
         if families.autonomous(self,a): return
         if any(c.get('state') == 'active' and a.id in c.get('participants', []) and self.tick-c.get('updated', self.tick) <= 150 for c in self.conversations.values()):
             a.activity, a.reason = 'converse', 'Listening to a nearby conversation; survival still takes priority'
