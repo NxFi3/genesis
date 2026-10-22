@@ -15,6 +15,8 @@ var scene: Node3D
 var camera: Camera3D
 var ground: Node3D
 var structures: Node3D
+var modular: Node3D
+var modular_revision := 0
 var deposits: Node3D
 var deposit_hash:=0
 var people: Node3D
@@ -48,10 +50,11 @@ func _ready() -> void:
     viewport_3d.add_child(scene)
     ground = Node3D.new()
     structures = Node3D.new()
+    modular = Node3D.new()
     deposits = Node3D.new()
     people = Node3D.new()
     foliage = Node3D.new()
-    for node in [ground,structures,deposits,people,foliage]: scene.add_child(node)
+    for node in [ground,structures,modular,deposits,people,foliage]: scene.add_child(node)
     var sky := WorldEnvironment.new()
     environment = Environment.new()
     environment.background_mode = Environment.BG_COLOR
@@ -127,6 +130,15 @@ func accept_state(value: Dictionary) -> void:
     if next != building_hash:
         building_hash = next
         _buildings()
+    var block_visuals: Array = []
+    for part in state.get("blocks", {}).values():
+        block_visuals.append([part.x, part.y, part.z, part.kind, part.get("open", false)])
+    for project in state.get("architecture_projects", {}).values():
+        block_visuals.append([project.id, project.state, project.progress])
+    next = hash(block_visuals)
+    if next != modular_revision or map_changed:
+        modular_revision = next
+        _modular_blocks()
     conversation_agents.clear()
     cargo_agents.clear()
     for c in state.get("conversations",{}).values():
@@ -253,6 +265,80 @@ func _buildings() -> void:
             Art.part(model,"cone",Vector3(.05,.35,-.05),Vector3(.18,.4,.2),Color("f9d883"))
         if b.kind=="gate" and state.get("gates",{}).get(b.id,true): model.rotation.y=PI*.5
         structures.add_child(model)
+
+func _modular_blocks() -> void:
+    _clear(modular)
+    var palette := {
+        "stone": Color("a8aea3"), "wood": Color("866549"),
+        "bricks": Color("ab785d"), "planks": Color("c5a16d")
+    }
+    var solids: Dictionary = {}
+    for material in palette: solids[material] = []
+    for block in state.get("blocks", {}).values():
+        var kind: String = str(block.get("kind", "stone"))
+        var x: float = float(block.x)
+        var y: float = float(block.y)
+        var z: float = float(block.z)
+        var position := Vector3(x, height_at(x, y) + .40 + z * .82, y)
+        if solids.has(kind):
+            solids[kind].append(position)
+        elif kind == "door":
+            var frame := Node3D.new()
+            frame.position = position
+            Art.part(frame, "box", Vector3(-.38, 0, 0), Vector3(.16, .82, .22), Color("a8aea3"))
+            Art.part(frame, "box", Vector3(.38, 0, 0), Vector3(.16, .82, .22), Color("a8aea3"))
+            Art.part(frame, "box", Vector3(0, .35, 0), Vector3(.85, .12, .22), Color("a8aea3"))
+            var panel := Art.part(frame, "box", Vector3(0, -.05, .03), Vector3(.66, .72, .12), Color("956a46"))
+            if bool(block.get("open", true)):
+                panel.rotation.y = PI * .5
+                panel.position.x = -.30
+            modular.add_child(frame)
+        elif kind == "stairs":
+            var stair := Node3D.new()
+            stair.position = position
+            Art.part(stair, "box", Vector3(0, -.23, .20), Vector3(.90, .35, .48), Color("a8aea3"))
+            Art.part(stair, "box", Vector3(0, .01, -.23), Vector3(.90, .60, .43), Color("a8aea3"))
+            modular.add_child(stair)
+    for material in palette:
+        var points: Array = solids[material]
+        if points.is_empty(): continue
+        var instancing := MultiMesh.new()
+        var cube := BoxMesh.new()
+        cube.size = Vector3(.95, .82, .95)
+        instancing.transform_format = MultiMesh.TRANSFORM_3D
+        instancing.mesh = cube
+        instancing.instance_count = points.size()
+        for index in range(points.size()):
+            instancing.set_instance_transform(index, Transform3D(Basis(), points[index]))
+        var instance := MultiMeshInstance3D.new()
+        instance.multimesh = instancing
+        instance.material_override = Art.material(palette[material])
+        modular.add_child(instance)
+    # Each outstanding design cell gets a small location marker, not a free building.
+    var pending: Array[Vector3] = []
+    for project in state.get("architecture_projects", {}).values():
+        if project.get("state") != "active": continue
+        for part in project.get("parts", []):
+            var addr: String = "%d:%d:%d" % [part.x, part.y, part.z]
+            if state.get("blocks", {}).has(addr): continue
+            var x: float = float(part.x)
+            var y: float = float(part.y)
+            pending.append(Vector3(x, height_at(x, y) + .025 + .82 * float(part.z), y))
+            if pending.size() >= 256: break
+        if pending.size() >= 256: break
+    if not pending.is_empty():
+        var mesh := BoxMesh.new()
+        mesh.size = Vector3(.50, .05, .50)
+        var ghosts := MultiMesh.new()
+        ghosts.transform_format = MultiMesh.TRANSFORM_3D
+        ghosts.mesh = mesh
+        ghosts.instance_count = pending.size()
+        for i in range(pending.size()):
+            ghosts.set_instance_transform(i, Transform3D(Basis(), pending[i]))
+        var preview := MultiMeshInstance3D.new()
+        preview.multimesh = ghosts
+        preview.material_override = Art.material(Color("e3c784"))
+        modular.add_child(preview)
 
 func _deposits() -> void:
     _clear(deposits)
