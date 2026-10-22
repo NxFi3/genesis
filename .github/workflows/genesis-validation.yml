@@ -5,6 +5,7 @@ on:
       - feature/genesis-emergent-builders
       - feature/genesis-llm-first-autonomy
       - feature/genesis-living-conversations
+      - fix/genesis-ollama-silent-agents
   pull_request:
     branches:
       - feature/genesis-large-world-geology
