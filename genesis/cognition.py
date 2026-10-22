@@ -108,6 +108,31 @@ def fit_context(payload, limit):
         if 'conversation' in data:
             data['conversation']['outcomes'] = data['conversation'].get('outcomes', [])[-2:]
     if size() > limit:
+        # The last dialogue turn is more valuable than old turns, large family
+        # profiles or optional action lists in a strict 6k-character budget.
+        data.pop('social_opportunities', None)
+        data.pop('pending_offers', None)
+        if 'conversation' in data:
+            conversation = data['conversation']
+            conversation['turns'] = conversation.get('turns', [])[-1:]
+            conversation.pop('instruction', None)
+            conversation.pop('outcomes', None)
+            partner = conversation.get('partner')
+            if isinstance(partner, dict):
+                conversation['partner'] = {k: partner[k] for k in ('id','name') if k in partner}
+        data['agent'].pop('family', None)
+        data['action_schemas'] = {k:v for k,v in data.get('action_schemas',{}).items()
+                                  if k in ('observe','talk','offer','accept','reject','help','move')}
+    if size() > limit:
+        # Preserve agent identity, physiological state and the latest actual
+        # message rather than rejecting all conversation at low budgets.
+        original = data['agent']
+        identity = original.get('identity',{})
+        data['agent'] = {'identity':{k:identity[k] for k in ('id','name') if k in identity},
+                         'needs':original.get('needs',{}), 'failure':original.get('failure','')}
+        if 'conversation' in data:
+            data['conversation']['turns'] = data['conversation'].get('turns',[])[-1:]
+    if size() > limit:
         raise ValueError('Cannot fit the minimal private context within configured budget')
     return data
 
