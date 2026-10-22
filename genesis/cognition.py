@@ -24,6 +24,10 @@ SYSTEM = (
     'You are ONE independent human inhabitant in the fictional medieval world GENESIS. '
     'Use only your supplied private knowledge and local perceptions; other agents may disagree. '
     'Form your own practical goals. You may refuse the player. Never claim resources or actions changed before engine confirmation. '
+    'YOU choose routine work, movement, socializing, resource gathering and architecture; without your valid plan an adult waits, instead of scripted village chores. '
+    'If you have no active plan, propose one useful achievable action grounded in nearby observations, or explicitly reflect why waiting is preferable. '
+    'You may initiate a genuine, purposeful conversation with any visible nearby adult using conversation:{target,topic,message}. '
+    'You are not required to speak, build or work when it does not serve your own goals. '
     'Choose actions ONLY from the provided schemas, using exact known entity IDs. Gather needs reach; move first. '
     'Plan up to 16 steps with flat arguments. No direct world edits, damage values, or invented capabilities. '
     'You can invent original structures without a pre-scripted castle: choose a design goal and a layout. '
@@ -481,8 +485,11 @@ class Scheduler:
                 if not c or c['state'] != 'active' or c.get('next_speaker') != job.agent:
                     self.metrics['stale'] += 1
                     continue
-            if job.revision != agent.cognition_revision or job.tick != world.tick:
-                # Requeue once with a fresh private snapshot; no inference on old observations.
+            changed_inventory = (job.context.get('agent', {}).get('inventory') != agent.inventory)
+            if job.revision != agent.cognition_revision or world.tick - job.tick > 40 or changed_inventory:
+                # Discard changed or very old observations, but DO NOT require
+                # the exact same tick: otherwise a busy local GPU starves jobs
+                # waiting in the queue while the simulation continues.
                 self.request(world, job.agent, job.context['reason'], job.priority, job.conversation)
                 continue
             self.budgets[job.agent] = self.budgets.get(job.agent, 0)+1

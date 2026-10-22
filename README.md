@@ -26,6 +26,44 @@ the results rendered in Godot. The authoritative movement grid is still 2-D,
 so this is **not** a complete Minecraft-style 3-D physics/voxel engine.
 See [modular architecture details](docs/modular-architecture.md).
 
+## LLM-first autonomy (experimental branch)
+
+The default in this branch is **LLM-first whenever shared cognition is enabled**.
+NPCs no longer silently fall back to scripted careers, patrols, jobs and social
+encounters while a model is still thinking or after a failed response. A valid
+model goal and executable plan are required for non-emergency voluntary NPC
+actions. An idle NPC can wait and its status reads `Awaiting LLM decision`.
+Physics, action validity, timed jobs, exhaustion, urgent survival, and protection
+from environmental dangers remain engine controlled. This is **not** one LLM
+call per rendered frame; longer model plans execute across many simulation ticks.
+
+For a small first experiment (four NPCs across two towns), use a new save:
+```bash
+python3 run.py --ollama --model qwen3.5:9b --timeout 60 --concurrency 1 \
+  --population 2 --width 96 --height 96 --save data/llm-first-test.sqlite
+```
+
+When an existing save file already exists, `--population` and the map size
+do **not** change that file. Disable LLM mode with `--offline` to restore the
+original deterministic simulation. The world is saved in a separate path above,
+so switching modes does not overwrite an unrelated old civilization.
+
+In Godot, `Find me` centers the gold player avatar, `Nearby NPC` selects an
+adult nearby, WASD moves your character in **Mode: Player**, and `Send message`
+requires distance ≤3 tiles. The Events tab now displays actual `reasoning`
+events (the agent's validated chosen goal), `Mind` displays the active plan,
+and the top bar shows model successes, failures, thinking and queue counts.
+An empty Conversations tab is normal until an agent actually initiates a
+dialogue or the player sends one. **LLM MINDS** indicates the model is enabled,
+not that every reply succeeded.
+
+On small local models, prefer a lower population, concurrency 1, a generous
+timeout, and speed 1×. Real Ollama completions and behavior are hardware/model
+dependent; CI validates simulated providers and Godot client, not the quality
+of real-model decisions. For comparison with classic Minecraft-style agents,
+the model chooses goals and skill calls while the authoritative engine executes
+movement and other low-level actions.
+
 ## Start locally
 
 On this experimental development branch new command-line worlds default to **96 × 96** tiles; existing saves are never resized. The Godot **New world** dialog offers 48 × 30, 96 × 96, 128 × 128 and experimental 256 × 256 worlds. Use `--width 128 --height 128 --save data/large-world.sqlite` to keep a separate 128² world. Camera range and very-large-map decorative instance density were adjusted, but chunk-streamed rendering is not finished. Regional *surface* ore veins are finite and mineable; underground excavation is still missing. See [research guide](docs/research.md).

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/genesis-emergent-builders
+      - feature/genesis-llm-first-autonomy
   pull_request:
     branches:
       - feature/genesis-large-world-geology

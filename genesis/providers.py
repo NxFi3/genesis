@@ -14,7 +14,7 @@ class InferenceConfig:
     endpoint: str = 'http://127.0.0.1:11434'
     model: str = 'qwen2.5:7b'
     context_limit: int = 14000  # character budget, approximately 3500 English tokens
-    timeout: float = 12
+    timeout: float = 60
     max_concurrency: int = 2
     per_agent_budget: int = 4
     global_budget: int = 64
@@ -23,7 +23,7 @@ class InferenceConfig:
     max_queue: int = 64
     max_turns: int = 8
     retries: int = 1
-    max_output_tokens: int = 700
+    max_output_tokens: int = 1200
 
     def validate(self):
         if not isinstance(self.enabled, bool):
