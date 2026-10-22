@@ -26,6 +26,17 @@ the results rendered in Godot. The authoritative movement grid is still 2-D,
 so this is **not** a complete Minecraft-style 3-D physics/voxel engine.
 See [modular architecture details](docs/modular-architecture.md).
 
+## Visible NPC-to-NPC conversations (experimental)
+
+The main **Conversations** tab now follows **all** NPC conversations, not
+just dialogues involving the currently selected person. Every line is the
+actual speaker text produced by the LLM and written to the world record.
+The Journal still permits filtering to the selected participant. Conversation
+opportunities are offered to residents near neighbors, even when they are not
+especially lonely; the model is still free to decline. More LLM conversation
+rounds mean more computation on a local GPU. This is **text only**; spatial
+voice/audio requires a separate text-to-speech integration.
+
 ## LLM-first autonomy (experimental branch)
 
 The default in this branch is **LLM-first whenever shared cognition is enabled**.
