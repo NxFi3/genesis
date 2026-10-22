@@ -47,6 +47,13 @@ def opportunities(world, agent, limit=3):
             topic, reason, score = 'news', f'You remember a report from {report["source"]}: {report["claim"][:200]}. Preserve its uncertainty when sharing.', 4
         elif agent.social > 40:
             topic, reason, score = 'company', 'You want company; ask about this neighbor\'s work or concerns.', 2
+        else:
+            # Even content residents occasionally have an opportunity to ask
+            # someone about their actual work, without generating speech.
+            # The model alone decides whether to accept the invitation.
+            topic, reason, score = ('neighbor', 'A nearby person is available. You may ask '
+                                    'about their work, offer cooperation, or simply keep '
+                                    'your current priorities. Only speak if useful.', 1)
         if topic:
             # Personality/rivalry affects opportunities, but never generates a line of dialogue.
             score += agent.personality.get('sociability', .5) - distance(agent, other)*.1
