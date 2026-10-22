@@ -275,7 +275,13 @@ class CognitionV2Tests(unittest.TestCase):
             self.assertTrue(generate(config, 'System', {'private': 'context'})['ok'])
             sent = json.loads(request.call_args.args[0].data)
             self.assertEqual(sent['model'], config.model)
+            self.assertEqual(sent['think'], False)
+            self.assertEqual(sent['format'], 'json')
             self.assertEqual(sent['messages'][0]['role'], 'system')
+            request.return_value.__enter__.return_value.read.return_value = json.dumps({'message': {'content': '', 'thinking': 'reasoning without an answer'}}).encode()
+            empty = generate(config, 'System', {})
+            self.assertFalse(empty['ok'])
+            self.assertIn('empty JSON content',empty['error'])
             config.provider = 'openai'
             request.return_value.__enter__.return_value.read.return_value = json.dumps({'choices': [{'message': {'content': '{"goal":"Observe","plan":[]}'}}]}).encode()
             self.assertTrue(generate(config, 'System', {})['ok'])

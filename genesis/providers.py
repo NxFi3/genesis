@@ -63,8 +63,12 @@ def generate(config, system, context):
     if config.provider == 'ollama':
         endpoint = config.endpoint.rstrip('/') + '/api/chat'
         payload = {'model': config.model, 'stream': False, 'format': 'json',
+                   # Thinking-only outputs consume the token budget and leave
+                   # content empty on several local reasoning-capable models.
+                   # Our engine needs concise machine-readable action JSON.
+                   'think': False,
                    'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}],
-                   'options': {'temperature': .6, 'num_predict': config.max_output_tokens}}
+                   'options': {'temperature': .4, 'num_predict': config.max_output_tokens}}
     else:
         base = config.endpoint.rstrip('/')
         endpoint = base + ('/chat/completions' if base.endswith('/v1') else '/v1/chat/completions')
@@ -86,6 +90,8 @@ def generate(config, system, context):
                 raise ValueError('Model response exceeds 256 KiB')
             body = json.loads(raw)
             content = body['message']['content'] if config.provider == 'ollama' else body['choices'][0]['message']['content']
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError('Model returned empty JSON content; increase timeout/output tokens or disable thinking')
             result = json.loads(content)
             if not isinstance(result, dict):
                 raise ValueError('Expected JSON object from model')

@@ -445,7 +445,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     if cognition.get("mode","offline") == "offline":
         cognition_stats.text = "OFFLINE · Deterministic simulation · Enable local Ollama in Settings"
     else:
-        cognition_stats.text = "LLM MINDS · %s · OK %d · Failed %d · Thinking %d · Queue %d%s" % [config.get("model","local model"),metrics.get("completed",0),metrics.get("failed",0),metrics.get("inflight",0),metrics.get("queued",0)," · ERROR (hover)" if not str(metrics.get("last_error","")).is_empty() else ""]
+        cognition_stats.text = "LLM MINDS · %s · OK %d · Failed %d · Discarded %d · Thinking %d · Queue %d%s" % [config.get("model","local model"),metrics.get("completed",0),metrics.get("failed",0),metrics.get("stale",0),metrics.get("inflight",0),metrics.get("queued",0)," · ERROR (hover)" if not str(metrics.get("last_error","")).is_empty() else ""]
     var lines: Array[String] = []
     for e in state.events.slice(maxi(0, state.events.size()-50)):
         var caption := UIStyle.safe(e.text)
