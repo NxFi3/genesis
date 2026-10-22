@@ -79,6 +79,49 @@ class EmergentArchitectureTests(unittest.TestCase):
         self.assertTrue(self.world.passable(18,16))
         validate_world(self.world)
 
+    def test_model_authored_design_is_applied_by_engine_not_hardcoded_castle_logic(self):
+        import time
+        from genesis.cognition import Scheduler
+        from genesis.providers import InferenceConfig
+        from genesis.planning import execute_plan
+        designer=self.world.agents['a2']
+        designer.x, designer.y = 19, 15
+        builder=self.world.agents['a1']
+        builder.x, builder.y = 19, 15
+        builder.inventory.update(stone=4,wood=4)
+        seen=[]
+        def fake_model(_config, _system, private_context):
+            seen.append(private_context['agent']['identity']['id'])
+            return {'ok':True, 'data':{
+                'goal':'I want to create an original courtyard',
+                'plan':[{'action':'design_structure','title':'Stone-corner courtyard',
+                         'purpose':'My own invented geometry',
+                         'x':18,'y':16,'layout':'0,0,0,stone;2,0,0,wood'}]}}
+        scheduler=Scheduler(InferenceConfig(enabled=True),fake_model)
+        try:
+            self.assertTrue(scheduler.request(self.world,designer.id,'create something',1))
+            deadline=time.monotonic()+3
+            while designer.plan_status!='active' and time.monotonic()<deadline:
+                scheduler.pump(self.world,schedule=False)
+                time.sleep(.005)
+            self.assertEqual(designer.plan_status,'active',scheduler.status())
+            self.assertEqual(seen,[designer.id])
+            self.assertTrue(execute_plan(self.world,designer))
+            self.assertEqual(len(self.world.architecture_projects),1)
+            project=next(iter(self.world.architecture_projects.values()))
+            self.assertEqual(project['author'],designer.id)
+            self.assertEqual(len(self.world.blocks),0)
+            self.world.tick+=1
+            self.assertTrue(architecture.autonomous(self.world,builder))
+            self.world.tick+=1
+            self.assertTrue(architecture.autonomous(self.world,builder))
+            self.assertEqual(project['state'],'completed')
+            self.assertEqual(len(self.world.blocks),2)
+            self.assertIn(builder.id,project['workers'])
+            validate_world(self.world)
+        finally:
+            scheduler.close()
+
     def test_missing_supplies_cannot_materialize_blocks(self):
         self.actor.inventory['stone']=0
         self.world.settlements['a'].inventory['stone']=0
