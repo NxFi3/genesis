@@ -4,6 +4,7 @@ on:
     branches:
       - feature/genesis-emergent-builders
       - feature/genesis-llm-first-autonomy
+      - feature/genesis-living-conversations
   pull_request:
     branches:
       - feature/genesis-large-world-geology
