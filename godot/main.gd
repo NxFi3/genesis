@@ -371,7 +371,7 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     view.selected = selected
     var environment: Dictionary = state.get("environment", {})
     top_stats.text = "%s · %s · Day %d, %02d:00 · %d inhabitants · %d buildings · %s" % [str(state.season).capitalize(),str(state.get("weather","clear")).capitalize(),1+int(state.tick)/240,int(state.get("hour",0)),state.agents.size()-1,state.buildings.size(),"Paused" if state.get("paused",false) else "Living world"]
-    top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick" % [state.tick,state.get("tick_ms",0)]
+    top_stats.tooltip_text = "Tick %d · %.2f ms per simulation tick · %d modular blocks · %d designs" % [state.tick,state.get("tick_ms",0),state.get("blocks",{}).size(),state.get("architecture_projects",{}).size()]
     top_stats.mouse_filter = Control.MOUSE_FILTER_PASS
     var cognition: Dictionary = state.get("cognition", {})
     var metrics: Dictionary = cognition.get("metrics", {})
@@ -393,14 +393,14 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
     _write_rich(timeline, "\n".join(lines), true)
     _write_rich(journal_events, timeline.text, true)
     var new_ids: Array[String] = []
-    for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+    for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats","architecture_projects"]:
         for key in state.get(category,{}): new_ids.append(key)
     if new_ids != selector_ids:
         selector_ids = new_ids
         selector.clear()
-        for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats"]:
+        for category in ["agents", "settlements", "buildings", "resources", "wildlife","threats","architecture_projects"]:
             for entity in state.get(category,{}).values():
-                selector.add_item("%s / %s" % [category, entity.get("name", entity.id)])
+                selector.add_item("%s / %s" % [category, entity.get("title", entity.get("name", entity.id))])
     if selected in selector_ids:
         selector.select(selector_ids.find(selected))
     else:
@@ -505,11 +505,17 @@ func _inspect() -> void:
         for memory in a.memories.slice(-8): mind += "Tick %d · %s\n" % [memory.get("tick",0),UIStyle.safe(memory.get("content",""))]
         _write_rich(memory_details,mind)
     else:
-        for category in ["buildings","settlements","resources","wildlife","threats"]:
+        for category in ["buildings","settlements","resources","wildlife","threats","architecture_projects"]:
             if state.get(category,{}).has(selected):
                 var entity: Dictionary = state[category][selected]
                 home = entity.get("home",entity.id if category == "settlements" else "a")
-                var text := UIStyle.heading(str(entity.get("name",entity.get("kind",entity.get("species",category)))).capitalize())
+                var text := UIStyle.heading(str(entity.get("title",entity.get("name",entity.get("kind",entity.get("species",category))))).capitalize())
+                if category=="architecture_projects":
+                    text += "Status: %s\nParts: %d / %d\nPurpose: %s\n" % [UIStyle.safe(str(entity.get("state","active"))),int(entity.get("progress",0)),entity.get("parts",[]).size(),UIStyle.safe(str(entity.get("purpose","")))]
+                    text += "Designer: %s\nWorkers: %s\n\nSelect Build → Architecture → Continue design.\n" % [UIStyle.safe(str(entity.get("author",""))),UIStyle.safe(", ".join(entity.get("workers",[])))]
+                    _write_rich(details,text)
+                    _write_rich(memory_details,"Every built part consumed owned materials. Unbuilt plans remain pending until worked.")
+                    continue
                 if category=="threats":
                     text=UIStyle.heading("ZOMBIE  /  Wilderness threat")
                     text+="Health %.0f / %.0f · Stamina %.0f\n\n" % [entity.hp,entity.get("max_hp",35),entity.stamina]
@@ -868,12 +874,51 @@ func _make_actions() -> void:
     use_site.text = "Use the explicit map tile below"
     build.add_child(use_site)
     action_fields.use_site = use_site
-    action_amount(build, "Tile X", "site_x", 0, 200)
-    action_amount(build, "Tile Y", "site_y", 0, 200)
+    action_amount(build, "Tile X", "site_x", 0, 511)
+    action_amount(build, "Tile Y", "site_y", 0, 511)
     action_button(build, "Pick a tile on the map", func(): placing_site = true; actions_popup.hide(); status_label.text = "Click a map tile for the building site. Escape cancels.")
     action_button(build, "Start selected construction", _build_at_site)
     action_button(build, "Contribute work to selected project", func(): player_command({"action": "work", "building": selected}))
     action_button(build, "Repair selected building", func(): player_command({"action": "repair", "building": selected}))
+    var design_scroll := ScrollContainer.new()
+    design_scroll.name = "Architecture"
+    tabs.add_child(design_scroll)
+    var design := VBoxContainer.new()
+    design.custom_minimum_size.x = 555
+    design_scroll.add_child(design)
+    action_note(design,"Write your own block layout; no scripted castle blueprint. Layout entries: dx,dy,z,material separated by semicolons. Costs and support are checked by the engine.")
+    var architect_title_row := action_row(design, "Project name")
+    var architect_title := LineEdit.new()
+    architect_title.text = "My custom structure"
+    architect_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    architect_title_row.add_child(architect_title)
+    action_fields.architect_title = architect_title
+    var architect_purpose_row := action_row(design,"Purpose")
+    var architect_purpose := LineEdit.new()
+    architect_purpose.text = "A structure I designed"
+    architect_purpose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    architect_purpose_row.add_child(architect_purpose)
+    action_fields.architect_purpose = architect_purpose
+    action_amount(design,"Anchor X","architect_x",0,511)
+    action_amount(design,"Anchor Y","architect_y",0,511)
+    action_fields.architect_x.value = 14
+    action_fields.architect_y.value = 15
+    var architect_layout := TextEdit.new()
+    architect_layout.custom_minimum_size = Vector2(535,105)
+    architect_layout.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    architect_layout.text = "0,0,0,stone;1,0,0,wood;2,0,0,stone;0,0,1,bricks;1,0,1,planks"
+    design.add_child(architect_layout)
+    action_fields.architect_layout = architect_layout
+    action_button(design,"Register my original design",func():player_command({"action":"design_structure","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"title":action_fields.architect_title.text,"purpose":action_fields.architect_purpose.text,"layout":action_fields.architect_layout.text.strip_edges()}))
+    action_button(design,"Work on selected design (repeat when needed)",func():player_command({"action":"work_structure","project":selected}))
+    action_button(design,"Work on nearest home design",func():player_command({"action":"work_structure"}))
+    action_options(design,"Part material","architect_material",["stone","wood","bricks","planks","door","stairs"])
+    action_amount(design,"Layer / height","architect_z",0,5)
+    action_button(design,"Place single part at X/Y/Z",func():player_command({"action":"place_block","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"kind":action_value("architect_material")}))
+    action_button(design,"Dismantle selected X/Y/Z part",func():player_command({"action":"remove_block","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value)}))
+    action_button(design,"Open modular door at X/Y/Z",func():player_command({"action":"toggle_modular_door","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"open":true}))
+    action_button(design,"Close modular door at X/Y/Z",func():player_command({"action":"toggle_modular_door","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"open":false}))
+    action_button(design,"Cancel selected design",func():player_command({"action":"cancel_structure","project":selected}))
     var life := VBoxContainer.new()
     life.name="Survival"
     tabs.add_child(life)
