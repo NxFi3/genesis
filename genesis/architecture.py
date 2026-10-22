@@ -215,7 +215,21 @@ def _place(world, actor, part, project=None):
     return {'ok': True, 'message': 'Placed one physical, paid-for part'}
 
 
+def _approach(world, actor, x, y):
+    """Approach a work site from walkable tiles, never through a finished wall."""
+    candidates = [(xx, yy) for xx in range(max(0, x-2), min(world.width, x+3))
+                  for yy in range(max(0, y-2), min(world.height, y+3))
+                  if math.hypot(xx-x, yy-y) <= 2.25 and world.passable(xx, yy)]
+    candidates.sort(key=lambda p: (math.hypot(actor.x-p[0],actor.y-p[1]),
+                                   math.hypot(p[0]-x,p[1]-y)))
+    return any(world.move(actor, xx, yy) for xx, yy in candidates[:10])
+
+
 def work(world, actor, command):
+    if actor.incapacitated:
+        return {'ok':False,'message':'Construction needs a conscious worker'}
+    if actor.hunger > 75 or actor.thirst > 75:
+        return {'ok':True,'pending':True,'message':'Paused for urgent survival'}
     project_id = command.get('project')
     candidate = world.architecture_projects.get(project_id) if project_id else None
     if candidate is None and not project_id:
@@ -239,7 +253,7 @@ def work(world, actor, command):
         return {'ok': False, 'message': 'Need available owned or shared building materials'}
     position = type('Point', (), {'x': part['x'], 'y': part['y']})()
     if distance(actor, position) > 2.5:
-        if not world.move(actor, part['x'], part['y']):
+        if not _approach(world, actor, part['x'], part['y']):
             return {'ok': False, 'message': 'Cannot reach the next part of this design'}
         return {'ok': True, 'pending': True, 'message': 'Walking to the construction site'}
     if actor.stamina < 3:
