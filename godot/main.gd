@@ -910,8 +910,8 @@ func _make_actions() -> void:
     design.add_child(architect_layout)
     action_fields.architect_layout = architect_layout
     action_button(design,"Register my original design",func():player_command({"action":"design_structure","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"title":action_fields.architect_title.text,"purpose":action_fields.architect_purpose.text,"layout":action_fields.architect_layout.text.strip_edges()}))
-    action_button(design,"Work on selected design (repeat when needed)",func():player_command({"action":"work_structure","project":selected}))
-    action_button(design,"Work on nearest home design",func():player_command({"action":"work_structure"}))
+    action_button(design,"Start / continue selected design",func():player_command({"action":"work_structure","project":selected}))
+    action_button(design,"Start nearest home design",func():player_command({"action":"work_structure"}))
     action_options(design,"Part material","architect_material",["stone","wood","bricks","planks","door","stairs"])
     action_amount(design,"Layer / height","architect_z",0,5)
     action_button(design,"Place single part at X/Y/Z",func():player_command({"action":"place_block","x":int(action_fields.architect_x.value),"y":int(action_fields.architect_y.value),"z":int(action_fields.architect_z.value),"kind":action_value("architect_material")}))
