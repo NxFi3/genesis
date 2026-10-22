@@ -447,7 +447,6 @@ func _received_state(_result: int, code: int, _headers: PackedStringArray, body:
         cognition_stats.text = "LLM MINDS · %s · OK %d · Failed %d · Thinking %d · Queue %d%s" % [config.get("model","local model"),metrics.get("completed",0),metrics.get("failed",0),metrics.get("inflight",0),metrics.get("queued",0)," · ERROR (hover)" if not str(metrics.get("last_error","")).is_empty() else ""]
     var lines: Array[String] = []
     for e in state.events.slice(maxi(0, state.events.size()-50)):
-        if e.kind == "reasoning": continue
         var caption := UIStyle.safe(e.text)
         if not e.actors.is_empty(): caption = "[url=%s]%s[/url]" % [e.actors[0], caption]
         lines.append("[color=#a2b4ad]%04d · %-10s[/color] %s" % [e.tick, str(e.kind).replace("_", " ").capitalize(), caption])
