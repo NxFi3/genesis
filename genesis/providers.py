@@ -15,7 +15,7 @@ class InferenceConfig:
     model: str = 'qwen2.5:7b'
     context_limit: int = 14000  # character budget, approximately 3500 English tokens
     timeout: float = 60
-    max_concurrency: int = 1
+    max_concurrency: int = 2
     per_agent_budget: int = 4
     global_budget: int = 64
     budget_window: int = 300   # simulation ticks
