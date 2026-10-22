@@ -131,6 +131,7 @@ func _make_ui() -> void:
     button_at("Pause / Resume", Vector2(1040, 15), func(): send({"action": "pause", "paused": not state.get("paused", false)}), 145)
     button_at("Settings", Vector2(1195, 15), _open_settings, 70)
     button_at("Find me", Vector2(785, 53), _find_me, 104)
+    button_at("Nearby NPC", Vector2(775, 91), _nearest_npc, 112)
     button_at("Save", Vector2(900, 53), func(): send({"action": "save"}), 70)
     button_at("Load", Vector2(977, 53), func(): send({"action": "load"}), 70)
     button_at("1×", Vector2(1054, 53), func(): send({"action": "speed", "speed": 2}), 50)
@@ -152,7 +153,11 @@ func _make_ui() -> void:
     selector = OptionButton.new()
     selector.position = Vector2(910, 134)
     selector.size = Vector2(350, 28)
-    selector.item_selected.connect(func(index: int): selected = selector_ids[index]; _inspect())
+    selector.item_selected.connect(func(index: int):
+        selected = selector_ids[index]
+        view.follow_agent = false
+        _inspect()
+    )
     add_child(selector)
     var inspector := TabContainer.new()
     inspector.position = Vector2(910, 170)
@@ -235,6 +240,32 @@ func _find_me() -> void:
     view.follow_agent = true
     _inspect()
     status_label.text = "Following your gold Traveler. WASD moves you in Player mode."
+
+
+func _nearest_npc() -> void:
+    var player: Dictionary = state.get("agents", {}).get("player", {})
+    if player.is_empty():
+        status_label.text = "Traveler not loaded yet."
+        return
+    var position := Vector2(float(player.x), float(player.y))
+    var closest: float = 7.0
+    var candidate := ""
+    for id in state.get("agents", {}):
+        if id == "player": continue
+        var agent: Dictionary = state.agents[id]
+        if agent.get("incapacitated", false) or agent.get("life_stage","adult") != "adult": continue
+        var dist: float = position.distance_to(Vector2(float(agent.x), float(agent.y)))
+        if dist < closest:
+            closest = dist
+            candidate = id
+    if candidate.is_empty():
+        status_label.text = "No adult NPC within 7 tiles. Walk toward a settlement."
+        return
+    selected = candidate
+    view.selected = candidate
+    view.follow_agent = false
+    _inspect()
+    status_label.text = "Selected %s (%.1f tiles away). Approach within 3 tiles, then Send message." % [_name(candidate),closest]
 
 
 func _toggle_mode() -> void:
@@ -807,6 +838,7 @@ func _unhandled_input(event: InputEvent) -> void:
                         if dist < closest:
                             selected = entity.id
                             closest = dist
+                view.follow_agent = false
                 _inspect()
     elif event is InputEventMouseMotion and panning:
         view.follow_agent = false
